@@ -1,0 +1,5 @@
+int main () =
+begin do
+    skip;
+    return 0;
+end

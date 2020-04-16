@@ -1,0 +1,21 @@
+int main () =
+begin
+    Tuple <string, Tuple<int>> t = {"I'm a string!", {2}};
+    int [] array = [];
+    bool b = false;
+
+    int fun () =
+        begin
+            int zero(int x, bool y) =
+                begin
+                do
+                    return 0;
+                end
+        do
+            append (&array, 2);
+            return (zero(2, false) + 1);
+        end
+do
+    print (fun());
+    return 0;
+end
