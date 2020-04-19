@@ -1,16 +1,11 @@
-int factorial (int n) =
-begin
+int factorial (int n) {
     int x = n;
-do
     if (x == 0) return 1;
-    return factorial(n * x - n);
-end
+    return n * factorial(x - 1);
+}
 
 
-int main () =
-begin
+int main () {
     int n = 5;
-do
-    print(factorial (n));
-    return 0;   
-end
+    return factorial(n);
+}

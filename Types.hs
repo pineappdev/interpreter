@@ -5,8 +5,12 @@ import Control.Monad.State
 import Control.Monad.Reader
 import qualified Data.Map as Map
 import Data.Maybe(fromJust)
+import Data.List(intersperse)
+import Data.Char(toLower)
 
 type ErrorType = (String, Val) -- Error, value to return (if return was called, then that string == "RETURN")
+
+keywords = ["print", "get", "set"]
 
 string2error :: String -> ErrorType
 string2error msg = (msg, Int 0)
@@ -19,8 +23,25 @@ type Store = (Map.Map Loc Val, Loc) -- Map, first free loc
 type ERSIO a = ExceptT ErrorType (ReaderT Env (StateT Store IO)) a
 
 data Val = Int Integer | Str String | Boolean Bool | ArrayInt [Int] | ArrayBoolean [Bool]
-         | ArrayStr [String] | EmptyArray | Tuple [Val] | Fun Block Type Env [Arg] deriving (Show)
+         | ArrayStr [String] | EmptyArray | Tuple [Val] | Fun Block Type Env [Arg]
 
+showsPrecVals :: Int -> [Val] -> ShowS
+showsPrecVals prec [] = showString ""
+showsPrecVals prec (val:vals) = case vals of
+    [] -> showsPrec prec val
+    other -> showsPrec prec val . showString ", " . showsPrecVals prec other
+
+instance Show Val where
+    showsPrec prec (Int i) = showString $ show i
+    showsPrec prec (Str string) = if (prec >= 10)
+        then showString "\"" . showString string . showString "\""
+        else showString string
+    showsPrec prec (Boolean b) = showString $ map toLower $ show b
+    showsPrec prec (ArrayInt arr) = showString $ show arr
+    showsPrec prec (ArrayBoolean arr) = showString $ show arr
+    showsPrec prec (ArrayStr arr) = showString $ show arr
+    showsPrec prec EmptyArray = showString $ show ([] :: [Int])
+    showsPrec prec (Tuple vals) = showString "(" . showsPrecVals 10 vals . showString ")"
 
 getLoc :: Ident -> ERSIO Loc
 getLoc x = do
@@ -89,3 +110,6 @@ getNewLoc = do
 
 getAt :: Val -> Int -> Val
 getAt (Tuple t) pos = t !! pos
+
+ident2String :: Ident -> String
+ident2String (Ident str) = str

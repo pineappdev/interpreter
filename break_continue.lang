@@ -1,0 +1,19 @@
+int main () {
+    while(true) {
+        break;
+    }
+
+    int x = 1;
+    x = 2;
+
+    while(x < 3) {
+        x = 3;
+        continue;
+        x = 5;
+    }
+
+    print(x);
+    break;
+
+    return 0;
+}

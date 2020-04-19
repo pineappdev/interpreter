@@ -7,6 +7,7 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import qualified Data.Map as Map
+import Data.List(intersperse)
 
 transStmt :: Stmt -> ERSIO ()
 
@@ -27,7 +28,7 @@ transStmt (Ass x expr) = do
     loc_x <- getLoc x
     val_x <- getVal loc_x
     if not (compTypes val val_x)
-        then throwError $ string2error $ show x ++ " is of different type than " ++ show expr
+        then throwError $ string2error $ "Type error: in " ++ show x ++ " = " ++ show expr
         else modify (\(store, loc) -> (Map.insert loc_x val store, loc))
 
 transStmt (Cond expr stmt) = do
@@ -45,8 +46,13 @@ transStmt (CondElse expr stmt1 stmt2) = do
 transStmt (While expr stmt) = do
     b <- evalToBool expr
     if b
-        then transStmt stmt >> transStmt (While expr stmt)
-        else return () 
+        then catchError (transStmt stmt >> transStmt (While expr stmt)) fun
+        else return ()
+        where
+            fun error = case error of
+                ("BREAK", _) -> return ()
+                ("CONTINUE", _) -> transStmt (While expr stmt)
+                other -> throwError other
 
 transStmt (SExp expr) = do
     transExpr expr
@@ -60,14 +66,48 @@ transStmt (BStmt (Block (stmt:stmts))) = do
         Decl type_ items -> do
             env <- transDecl (Decl type_ items)
             local (\env' -> env) (transStmt (BStmt (Block stmts)))
+        FunDef topdef -> do
+            env <- transFnDef (FunDef topdef)
+            local (\env' -> env) (transStmt (BStmt (Block stmts)))
         other -> transStmt stmt >> transStmt (BStmt (Block stmts))
+
+transFnDef :: Stmt -> ERSIO Env
+transFnDef (FunDef topdef) = do
+    env <- registerFun topdef
+    local (\env' -> env) (transTopDef topdef)
+    return env
+
+-- assumes that func already lives in the env, saves it to store
+transTopDef :: TopDef -> ERSIO ()
+transTopDef (FnDef type_ ident args block) = do
+    env <- ask
+    loc <- getLoc ident
+    let fun_val = Fun block type_ env args
+    modify (\(store, loc') -> (Map.insert loc fun_val store, loc'))
+    return ()
+
+-- reserve loc for func and change the env, but don't define function (in store loc for that func points to nothing)
+registerFun :: TopDef -> ERSIO Env
+registerFun (FnDef type_ f args block) = let x = ident2String f in
+    if elem x keywords
+    then do
+        throwError $ string2error $ show f ++ " is a restricted keyword"
+    else do
+        env <- ask
+    -- TODO: name overriding, but not in scope of the same block... TODO
+    -- case Map.lookup f env of
+        -- Just _ -> throwError $ string2error $ "Function " ++ show f ++ " is already defined"
+        -- Nothing -> do
+        loc <- getNewLoc
+        modify (\(store, loc') -> (store, loc' + 1))
+        return $ Map.insert f loc env
 
 transDecl :: Stmt -> ERSIO Env
 transDecl (Decl type_ []) = do ask
 transDecl (Decl type_ ((Init x expr):items)) = do
     val <- transExpr expr
     if not (compTypeWithVal type_ val)
-        then do throwError $ string2error  $ "Type error: " ++ show expr ++ " is not of type " ++ show type_
+        then do throwError $ string2error  $ "Type error: in " ++ show type_ ++ " " ++ show x ++ " = " ++ show expr
         else do
             loc <- alloc val
             local (\env -> Map.insert x loc env) (transDecl (Decl type_ items))
@@ -122,6 +162,15 @@ execFun fun env stmt = do
     local (\env' -> env) (transStmt stmt)
     throwError $ string2error  $ "No return in the function " ++ show fun
 
+-- TODO: mapM...?
+printArgs :: [EArg] -> ERSIO Val
+printArgs [] = return (Int 0)
+printArgs (earg:eargs) = do
+    val <- case earg of
+        EArgE expr -> transExpr expr
+        EArgName x -> throwError $ string2error "print only accepts passing by value"
+    let str = if not $ null eargs then show val ++ " " else show val ++ "\n" 
+    liftIO (putStr str) >> printArgs eargs
 
 transExpr :: Expr -> ERSIO Val
 
@@ -133,20 +182,29 @@ transExpr ELitTrue = do return (Boolean True)
 
 transExpr ELitFalse = do return (Boolean False)
 
-transExpr (EApp ident eargs) = do
-    loc <- getLoc ident
-    (store, loc') <- get
-    fun <- getVal loc
-    case fun of
-        Fun block type_ env args -> do
-            env <- resolveArgs eargs args
-            catchError (execFun ident env (BStmt block)) handle_error where
-                handle_error :: ErrorType -> ERSIO Val
-                handle_error (msg, val) = case msg of
-                    "RETURN" -> if not $ compTypeWithVal type_ val
-                        then throwError $ string2error $ "Function " ++ show ident ++ " returned a different type than declared"
-                        else return val
-                    other -> throwError $ string2error other
+transExpr (EApp ident eargs) = let x = ident2String ident in
+    if elem x keywords
+    then do
+        case x of
+            "print" -> printArgs eargs
+            "get" -> throwError $ string2error $ "get not implemented yet"
+            "set" -> throwError $ string2error $ "set not implemented yet"
+    else do
+        loc <- getLoc ident
+        (store, loc') <- get
+        fun <- getVal loc
+        case fun of
+            Fun block type_ env args -> do
+                env <- resolveArgs eargs args
+                catchError (execFun ident env (BStmt block)) handle_error where
+                    handle_error :: ErrorType -> ERSIO Val
+                    handle_error (msg, val) = case msg of
+                        "RETURN" -> if not $ compTypeWithVal type_ val
+                            then throwError $ string2error $ "Function " ++ show ident ++ " returned a different type than declared"
+                            else return val
+                        "BREAK" -> throwError $ string2error $ "Error: break coutside of loop"
+                        "CONTINUE" -> throwError $ string2error $ "Error: continue outside of loop"
+                        other -> throwError $ string2error other
 
 transExpr (EString string) = do
     return (Str string)

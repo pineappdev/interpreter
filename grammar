@@ -1,10 +1,10 @@
--- Programs ------------------------------------------------
+-- programs ------------------------------------------------
 
 entrypoints Program ;
 
 Program.   Program ::= [TopDef] ;
 
-FnDef.	   TopDef ::= Type Ident "(" [Arg] ")" "=" Block ;
+FnDef.	   TopDef ::= Type Ident "(" [Arg] ")" Block ;
 
 separator nonempty TopDef "" ;
 
@@ -12,30 +12,29 @@ Arg. 	   Arg ::= Type Ident;
 
 separator  Arg "," ;
 
+-- statements ----------------------------------------------
 
--- Blocks ----------------------------------------------
+Block.     Block ::= "{" [Stmt] "}" ;
 
-Block.     Block ::= "begin" [Decl] "do" [Stmt] "end" ;
+separator  Stmt "" ;
 
-separator  Decl "" ;
+Empty.     Stmt ::= ";" ;
 
-separator Stmt "" ;
-
--- Declarations ----------------------------------------------
-
-Decl.      Decl ::= Type Ident "=" Expr ";" ;
-
-FDecl.     Decl ::= TopDef ;
-
--- Statements ----------------------------------------------
-
-Skip.      Stmt ::= "skip" ";" ;
-
-Ass.       Stmt ::= Ident "=" Expr  ";" ;
+BStmt.     Stmt ::= Block ;
 
 Break.     Stmt ::= "break" ";" ;
 
 Continue.  Stmt ::= "continue" ";" ;
+
+Decl.      Stmt ::= Type [Item] ";" ;
+
+FunDef.    Stmt ::= TopDef ;
+
+Init.      Item ::= Ident "=" Expr ;
+
+separator nonempty Item "," ;
+
+Ass.       Stmt ::= Ident "=" Expr  ";" ;
 
 Ret.       Stmt ::= "return" Expr ";" ;
 
@@ -45,21 +44,21 @@ CondElse.  Stmt ::= "if" "(" Expr ")" Stmt "else" Stmt  ;
 
 While.     Stmt ::= "while" "(" Expr ")" Stmt ;
 
-SExpr.     Stmt ::= Expr ";" ;
+SExp.      Stmt ::= Expr  ";" ;
 
 -- Types ---------------------------------------------------
 
-Int.       BaseType ::= "int" ;
+IntT.      BaseType ::= "int" ;
 
-Str.       BaseType ::= "string" ;
+StrT.      BaseType ::= "string" ;
 
-Bool.      BaseType ::= "bool" ;
+BooleanT.  BaseType ::= "bool" ;
 
-BaseType.  Type ::= BaseType ;
+BaseT.     Type ::= BaseType ;
 
-Array.     Type ::= BaseType "[]" ;
+ArrayT.    Type ::= BaseType "[]" ;
 
-Tuple.     Type ::= "Tuple" "<" [Type] ">" ;
+TupleT.    Type ::= "Tuple" "<" [Type] ">" ;
 
 separator nonempty Type "," ;
 
@@ -81,7 +80,7 @@ EArgName.  EArg ::= "&" Ident ;
 
 EString.   Expr6 ::= String ;
 
-ETuple.    Expr6 ::= "{" [Expr] "}" ;
+ETuple.    Expr6 ::= "[" [Expr] "]" ;
 
 EArray.    Expr6 ::= "[]" ;
 
@@ -105,7 +104,7 @@ separator EArg "," ;
 
 separator  Expr "," ;
 
--- Operators -----------------------------------------------
+-- operators -----------------------------------------------
 
 Plus.      AddOp ::= "+" ;
 
@@ -129,11 +128,10 @@ EQU.       RelOp ::= "==" ;
 
 NE.        RelOp ::= "!=" ;
 
--- Comments ------------------------------------------------
+-- comments ------------------------------------------------
 
 comment    "#" ;
 
 comment    "//" ;
 
 comment    "/*" "*/" ;
-

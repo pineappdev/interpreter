@@ -37,31 +37,13 @@ transProgram (Program topdefs) = do
 
 
 -- TODO: wrap it in foldM maybe?
+-- adds function names to the env (reserving locations), but doesn't change the store
 registerFuns :: [TopDef] -> ERSIO Env
 registerFuns [] = ask
 registerFuns (topdef:topdefs) = do
     env <- registerFun topdef
     local (\env' -> env) (registerFuns topdefs)
 
--- reserve loc for func and change the env, but don't define function (in store loc for that func points to nothing)
-registerFun :: TopDef -> ERSIO Env
-registerFun (FnDef type_ f args block) = do
-    env <- ask
-    case Map.lookup f env of
-        Just _ -> throwError $ string2error $ "Function " ++ show f ++ " is already defined"
-        Nothing -> do
-            loc <- getNewLoc
-            modify (\(store, loc') -> (store, loc' + 1))
-            return $ Map.insert f loc env
-
 transTopDefs :: [TopDef] -> ERSIO ()
 transTopDefs [] = return ()
 transTopDefs (topdef:topdefs) = transTopDef topdef >> transTopDefs topdefs
-
-transTopDef :: TopDef -> ERSIO ()
-transTopDef (FnDef type_ ident args block) = do
-    env <- ask
-    let loc = fromJust $ Map.lookup ident env
-    let fun_val = Fun block type_ env args
-    modify (\(store, loc') -> (Map.insert loc fun_val store, loc'))
-    return ()

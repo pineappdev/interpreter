@@ -1,7 +1,4 @@
-int main () =
-begin
+int main () {
     // Tuple<int, Tuple<string>> x = {1, {"string"}};
-do
-    skip;
     return 0;
-end
+}
