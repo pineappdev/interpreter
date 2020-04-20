@@ -5,12 +5,13 @@ module Main where
 import System.IO ( stdin, hGetContents )
 import System.Environment ( getArgs, getProgName )
 import System.Exit ( exitFailure, exitSuccess )
+import Control.Monad (when)
 
-import LexNewGrammar
-import ParNewGrammar
-import SkelNewGrammar
-import PrintNewGrammar
-import AbsNewGrammar
+import LexGrammar
+import ParGrammar
+import SkelGrammar
+import PrintGrammar
+import AbsGrammar
 
 
 
@@ -24,12 +25,16 @@ myLLexer = myLexer
 type Verbosity = Int
 
 putStrV :: Verbosity -> String -> IO ()
-putStrV v s = if v > 1 then putStrLn s else return ()
+putStrV v s = when (v > 1) $ putStrLn s
 
-runFile :: Verbosity -> ([LexNewGrammar.Token] -> ErrM.Err AbsNewGrammar.Program) -> FilePath -> IO ()
+runFile :: Verbosity ->
+    ([LexGrammar.Token] -> ErrM.Err (AbsGrammar.Program (Maybe (Int, Int))))
+    -> FilePath -> IO ()
 runFile v p f = putStrLn f >> readFile f >>= run v p
 
-run :: Verbosity -> ([LexNewGrammar.Token] -> ErrM.Err AbsNewGrammar.Program) -> String -> IO ()
+run :: Verbosity ->
+    ([LexGrammar.Token] -> ErrM.Err (AbsGrammar.Program (Maybe (Int, Int)))) ->
+    String -> IO ()
 run v p s = let ts = myLLexer s in case p ts of
            Bad s    -> do putStrLn "\nParse              Failed...\n"
                           putStrV v "Tokens:"
@@ -40,8 +45,12 @@ run v p s = let ts = myLLexer s in case p ts of
                           showTree v tree
                           transProgram2IO tree
 
+                          -- exitSuccess
+
+
 showTree :: (Show a, Print a) => Int -> a -> IO ()
-showTree v tree = do
+showTree v tree
+ = do
       putStrV v $ "\n[Abstract Syntax]\n\n" ++ show tree
       putStrV v $ "\n[Linearized tree]\n\n" ++ printTree tree
 
@@ -61,7 +70,11 @@ main = do
   args <- getArgs
   case args of
     ["--help"] -> usage
-    [] -> hGetContents stdin >>= run 2 pProgram
+    [] -> getContents >>= run 2 pProgram
     "-s":fs -> mapM_ (runFile 0 pProgram) fs
     fs -> mapM_ (runFile 2 pProgram) fs
+
+
+
+
 
