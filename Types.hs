@@ -22,8 +22,59 @@ type Store loc_type = (Map.Map Loc (Val loc_type), Loc) -- (Map loc -> value, fi
 
 type ERSIO res_type loc_type = ExceptT (ErrorType loc_type) (ReaderT (Env loc_type) (StateT (Store loc_type) IO)) res_type
 
-data Val a = Int a Integer | Str a String | Boolean a Bool | ArrayInt a [Int] | ArrayBoolean a [Bool]
+data Val a = Int a Integer | Str a String | Boolean a Bool | ArrayInt a [Integer] | ArrayBoolean a [Bool]
          | ArrayStr a [String] | EmptyArray a | Tuple a [Val a] | Fun (Block a) (Type a) (Env a) [Arg a] | NULL
+
+
+showValsType :: Val a -> String
+showValsType (Int _ _) = "int"
+showValsType (Str _ _) = "string"
+showValsType (Boolean _ _) = "bool"
+showValsType (ArrayInt _ _) = "int []"
+showValsType (ArrayBoolean _ _) = "bool []"
+showValsType (ArrayStr _ _) = "string []"
+showValsType (EmptyArray _) = "[]"
+showValsType (Tuple _ vals) = "Tuple<" ++ concat (intersperse ", " (map showValsType vals)) ++ ">"
+
+val2Bool :: Show a => a -> Val a -> ERSIO Bool a
+val2Bool a val = case val of
+    Boolean _ b -> return b
+    _ -> throwError $ string2error $ show a ++ ": type error, expected bool"
+
+val2Int :: Show a => a -> Val a -> ERSIO Integer a
+val2Int a val = case val of
+    Int _ i -> return i
+    _ -> throwError $ string2error $ show a ++ ": type error, expected int"
+
+val2Str :: Show a => a -> Val a -> ERSIO String a
+val2Str a val = case val of
+    Str _ s -> return s
+    _ -> throwError $ string2error $ show a ++ ": type error, expected string"
+
+compVals:: Val a -> Val a -> Int
+compVals val1 val2 = case (val1, val2) of
+    (Int _ i1, Int _ i2) -> if i1 == i2 then 1 else 0
+    (Str _ str1, Str _ str2) -> if str1 == str2 then 1 else 0
+    (Boolean _ b1, Boolean _ b2) -> if b1 == b2 then 1 else 0
+    (ArrayInt _ a1, ArrayInt _ a2) -> if a1 == a2 then 1 else 0
+    (ArrayBoolean _ a1, ArrayBoolean _ a2) -> if a1 == a2 then 1 else 0
+    (ArrayStr _ a1, ArrayStr _ a2) -> if a1 == a2 then 1 else 0
+    (EmptyArray _, ArrayInt _ a1) -> if a1 == [] then 1 else 0
+    (EmptyArray _, ArrayBoolean _ a1) -> if a1 == [] then 1 else 0
+    (EmptyArray _, ArrayStr _ a1) -> if a1 == [] then 1 else 0
+    (ArrayInt _ a1, EmptyArray _) -> if a1 == [] then 1 else 0
+    (ArrayBoolean _ a1, EmptyArray _) -> if a1 == [] then 1 else 0
+    (ArrayStr _ a1, EmptyArray _) -> if a1 == [] then 1 else 0
+    (Tuple _ x1, Tuple _ x2) -> compValLists x1 x2
+    (_, _) -> -1
+
+-- returns -1 if types don't match
+-- 1 if tuples have same values
+-- 0 otherwise
+compValLists :: [Val a] -> [Val a] -> Int
+compValLists [] [] = 1
+compValLists (val1:vals1) (val2:vals2) = if k == 1 then compValLists vals1 vals2 else k where k = compVals val1 val2
+compValLists _ _ = -1
 
 changeAVal :: a -> Val a -> Val a
 changeAVal a' val = case val of
@@ -108,7 +159,6 @@ compTypeWithVal type_ val = case (type_, val) of
     (ArrayT _ (StrT _), EmptyArray _) -> True
     (TupleT _ types, Tuple _ vals) -> compTypesWithVals types vals
     _ -> False
-
 
 -- allocates a new loc with input value and returns this new loc
 alloc :: Val a -> ERSIO Loc a

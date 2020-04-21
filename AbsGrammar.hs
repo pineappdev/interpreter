@@ -75,7 +75,12 @@ instance Functor Item where
         Init a ident expr -> Init (f a) ident (fmap f expr)
 
 data BaseType a = IntT a | StrT a | BooleanT a
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord, Read)
+
+instance Show (BaseType a) where
+    show (IntT _) = "int"
+    show (StrT _) = "string"
+    show (BooleanT _) = "bool"
 
 instance Functor BaseType where
     fmap f x = case x of
@@ -85,7 +90,12 @@ instance Functor BaseType where
 
 data Type a
     = BaseT a (BaseType a) | ArrayT a (BaseType a) | TupleT a [Type a]
-  deriving (Eq, Ord, Show, Read)
+  deriving (Eq, Ord, Read)
+
+instance Show (Type a) where
+    show (BaseT _ base) = show base
+    show (ArrayT _ base) = show base ++ " []"
+    show (TupleT _ types) = "Tuple<" ++ concat (intersperse ", " (map show types)) ++ ">"
 
 instance Functor Type where
     fmap f x = case x of

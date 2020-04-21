@@ -14,7 +14,7 @@ import qualified Data.Map as Map
 import Data.Maybe(fromJust)
 
 
--- TODO !IMPORTANT! -- print, get, set !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+-- TODO !IMPORTANT! -- append !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
 transProgram2IO :: Show a => Program a -> IO ()

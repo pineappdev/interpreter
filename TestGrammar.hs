@@ -24,16 +24,23 @@ myLLexer = myLexer
 
 type Verbosity = Int
 
+newtype Place = Place (Int, Int)
+instance Show Place where
+  show (Place (x, y)) = showString "(" "" ++ show x ++ ", " ++ show y ++ showString ")" ""
+
+placeFromMaybe :: Maybe (Int, Int) -> Place
+placeFromMaybe (Just (x, y)) = Place (x, y)
+
 putStrV :: Verbosity -> String -> IO ()
 putStrV v s = when (v > 1) $ putStrLn s
 
 runFile :: Verbosity ->
-    ([LexGrammar.Token] -> ErrM.Err (AbsGrammar.Program (Maybe (Int, Int))))
+    ([LexGrammar.Token] -> ErrM.Err (AbsGrammar.Program (Maybe(Int, Int))))
     -> FilePath -> IO ()
 runFile v p f = putStrLn f >> readFile f >>= run v p
 
 run :: Verbosity ->
-    ([LexGrammar.Token] -> ErrM.Err (AbsGrammar.Program (Maybe (Int, Int)))) ->
+    ([LexGrammar.Token] -> ErrM.Err (AbsGrammar.Program (Maybe(Int, Int)))) ->
     String -> IO ()
 run v p s = let ts = myLLexer s in case p ts of
            Bad s    -> do putStrLn "\nParse              Failed...\n"
@@ -43,7 +50,7 @@ run v p s = let ts = myLLexer s in case p ts of
                           exitFailure
            Ok  tree -> do putStrLn "\nParse Successful!"
                           showTree v tree
-                          transProgram2IO tree
+                          transProgram2IO (fmap placeFromMaybe tree)
 
                           -- exitSuccess
 

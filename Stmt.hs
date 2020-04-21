@@ -11,9 +11,9 @@ import Data.List(intersperse)
 
 transStmt :: Show a => Stmt a -> ERSIO () a
 
-transStmt (Break a) = do throwError $ ("BREAK", (Int a 0))
+transStmt (Break a) = do throwError $ ("BREAK", NULL)
 
-transStmt (Continue a) = do throwError $ ("CONTINUE", (Int a 0))
+transStmt (Continue a) = do throwError $ ("CONTINUE", NULL)
 
 transStmt (Ret a expr) = do
     val <- transExpr expr
@@ -26,7 +26,7 @@ transStmt (Ass a x expr) = do
     (loc_x, a_x) <- getLoc a x
     val_x <- getVal loc_x
     if not (compValTypes val val_x)
-        then throwError $ string2error $ show a ++ ": type error"
+        then throwError $ string2error $ show a ++ ": type error - expected" ++ showValsType val_x ++ ", but got " ++ showValsType val
         else modify (\(store, loc) -> (Map.insert loc_x val store, loc))
 
 transStmt (Cond _ expr stmt) = do
@@ -105,7 +105,7 @@ transDecl (Decl a type_ []) = do ask
 transDecl (Decl a type_ ((Init a' x expr):items)) = do
     val <- transExpr expr
     if not (compTypeWithVal type_ val)
-        then do throwError $ string2error $ show a ++ ": type error: expected " ++ show type_ 
+        then do throwError $ string2error $ show a ++ ": type error: expected " ++ show type_  ++ ", but got " ++ showValsType val
         else do
             loc <- alloc val
             local (\env -> Map.insert x (loc, a) env) (transDecl (Decl a type_ items))
@@ -118,6 +118,10 @@ transDecl (Decl a type_ ((Init a' x expr):items)) = do
 ------------------------------------------------- EXPRS -------------------------------------------------------------------------
 -- TODO: separate this as a distinct module
 -- TODO: showType val function??
+
+insertVal :: Loc -> Val a -> ERSIO () a
+insertVal loc val = do
+    modify (\(store, loc') -> (Map.insert loc val store, loc'))
 
 getAFromExpr :: Show a => Expr a -> a
 getAFromExpr expr = case expr of
@@ -146,14 +150,14 @@ evalToInt expr = do
     val <- transExpr expr
     case val of
         Int _ x -> return x
-        _ -> throwError $ string2error  $ show (getAFromExpr expr) ++ ": type error: expected an int"
+        _ -> throwError $ string2error  $ show (getAFromExpr expr) ++ ": type error: expected int, but got " ++ showValsType val
 
 evalToBool :: Show a => Expr a -> ERSIO Bool a
 evalToBool expr = do
     val <- transExpr expr
     case val of
         Boolean _ x -> return x
-        _ -> throwError $ string2error  $ show (getAFromExpr expr) ++ ": type error: expected a bool"
+        _ -> throwError $ string2error  $ show (getAFromExpr expr) ++ ": type error: expected bool, but got " ++ showValsType val
 
 -- adjusts store and env to args
 -- first a is the place of the function call
@@ -166,7 +170,8 @@ resolveArgs a (earg:eargs) (arg:args) =
             -- I need a function to compare type with val and throwError w.r.t. to place of the earg and arg
             -- the problem is, val a doesn't really have info of places
             if not $ compTypeWithVal type_ val
-                then throwError $ string2error $ show ea ++ ": type error, expected " ++ show type_ ++ " as declared at: " ++ show aa
+                then throwError $ string2error $ show ea ++ ": type error: expected "
+                    ++ show type_ ++ " as declared at: " ++ show aa ++ ", but got " ++ showValsType val
                 else do
                     loc <- alloc val
                     local (\env -> Map.insert x (loc, aa) env) (resolveArgs a eargs args)
@@ -174,7 +179,8 @@ resolveArgs a (earg:eargs) (arg:args) =
             (loc, a') <- getLoc ea name
             val <- getVal loc
             if not $ compTypeWithVal type_ val
-                then throwError $ string2error  $ show ea ++ ": type error, expected " ++ show type_ ++ " as declared at: " ++ show aa
+                then throwError $ string2error  $ show ea ++ ": type error: expected " ++ show type_ ++ " as declared at: " ++ show aa
+                    ++ ", but got " ++ showValsType val
                 else do
                     local (\env -> Map.insert x (loc, aa) env) (resolveArgs a eargs args)
 
@@ -198,6 +204,92 @@ printArgs a (earg:eargs) = do
     let str = if not $ null eargs then show val ++ " " else show val ++ "\n" 
     liftIO (putStr str) >> printArgs a eargs
 
+computeIndex :: Show a => EArg a -> ERSIO Integer a
+computeIndex earg = do
+    let a' = getAFromEArg earg
+    let un_val = case earg of
+            EArgE _ expr -> transExpr expr
+            EArgName b x -> do
+                (loc, _) <- getLoc b x
+                getVal loc
+    val <- un_val
+    case val of
+        Int a i -> if i < 0 then
+            throwError $ string2error $ show a' ++ ": negative index"
+            else return i
+        _ -> throwError $ string2error $ show a' ++ ": index can be only int, got " ++ showValsType val
+
+checkRange :: Show a => Foldable t => a -> Integer -> t b -> ERSIO () a
+checkRange a idx arr = if idx >= toInteger (length arr)
+    then throwError $ string2error $ show a ++ ": index out of range"
+    else return ()
+
+eargToValue :: Show a => EArg a -> ERSIO (Val a) a
+eargToValue earg = case earg of
+    EArgE _ expr -> transExpr expr
+    EArgName b x -> do
+        (loc, _) <- getLoc b x
+        getVal loc
+
+transGet :: Show a => a -> [EArg a] -> ERSIO (Val a) a
+transGet a eargs = if length eargs > 2 then throwError $ string2error $ show a ++ ": in get: too many args provided (get accepts index and tuple/array as args)" else
+    if length eargs < 2 then throwError $ string2error $ show a ++ ": in get: not enough arguments (get accepts index and tuple/array as args)" else do
+        let a' = getAFromEArg $ head eargs
+        idx <- computeIndex $ head eargs
+        let a'' = getAFromEArg $ eargs !! 1
+        li <- eargToValue (eargs !! 1)
+        case li of
+            Tuple _ vals -> checkRange a' idx vals >> return (vals !! fromInteger(idx))
+            ArrayInt _ arr -> checkRange a' idx arr >> return (Int a (arr !! fromInteger(idx)))
+            ArrayBoolean _ arr -> checkRange a' idx arr >> return (Boolean a (arr !! fromInteger(idx))) 
+            ArrayStr _ arr -> checkRange a' idx arr >> return (Str a (arr !! fromInteger(idx)))
+            EmptyArray _ -> throwError $ string2error $ show a' ++ ": array index out of range"
+            _ -> throwError $ string2error $ show a' ++ ": get only accepts tuples or arrays, got " ++ showValsType li
+
+insertToArr :: Int -> a -> [a] -> [a]
+insertToArr idx val vals = case splitAt idx vals of
+    (left, right) -> left ++ [val] ++ right' where
+        right' = case splitAt 1 right of
+            (l, r) -> r
+
+transSet :: Show a => a -> [EArg a] -> ERSIO (Val a) a
+--          array index value
+transSet a (earg1:earg2:earg3:[]) = do
+    let a3 = getAFromEArg earg3
+    let a2 = getAFromEArg earg2
+    idx <- computeIndex earg2
+    to_set <- eargToValue earg3
+    case earg1 of
+        EArgE a' expr -> throwError $ string2error $ show a' ++ ": first argument of set must be passed by name"
+        EArgName b x -> do
+            (loc, _) <- getLoc b x
+            val <- getVal loc
+            case val of
+                Tuple z vals -> do
+                    checkRange a2 idx vals
+                    let val_cur = (vals !! fromInteger(idx))
+                    if not (compValTypes to_set val_cur) then
+                        throwError $ string2error $ show a3 ++ ": type error: expected " ++ showValsType val_cur ++ ", but got " ++ showValsType to_set
+                        else insertVal loc (Tuple z (insertToArr (fromInteger idx) to_set vals))
+                ArrayInt z arr -> do
+                    checkRange a2 idx arr
+                    i <- val2Int a3 to_set
+                    insertVal loc (ArrayInt z (insertToArr (fromInteger idx) i arr))
+                ArrayBoolean z arr -> do
+                    checkRange a2 idx arr
+                    b <- val2Bool a3 to_set
+                    insertVal loc (ArrayBoolean z (insertToArr (fromInteger idx) b arr))
+                ArrayStr z arr -> do
+                    checkRange a2 idx arr
+                    s <- val2Str a3 to_set
+                    insertVal loc (ArrayStr z (insertToArr (fromInteger idx) s arr))
+                EmptyArray _ -> throwError $ string2error $ show a2 ++ ": array index out of range"
+                _ -> throwError $ string2error $ show a2 ++ ": set only accepts tuples or arrays, got " ++ showValsType val
+    return $ Int a 0
+
+transSet a _ = throwError $ string2error $ show a ++ ": set function accepts 3 args: array/tuple, index (int), and a new value"
+
+
 transExpr :: Show a => Expr a -> ERSIO (Val a) a
 
 transExpr (EVar a x) = do
@@ -216,8 +308,8 @@ transExpr (EApp a ident eargs) = let x = ident2String ident in
     then do
         case x of
             "print" -> printArgs a eargs
-            "get" -> throwError $ string2error $ show a ++ ": get not implemented yet"
-            "set" -> throwError $ string2error $ show a ++ ": set not implemented yet"
+            "get" -> transGet a eargs
+            "set" -> transSet a eargs
     else do
         (loc, a') <- getLoc a ident
         (store, loc') <- get
@@ -230,7 +322,9 @@ transExpr (EApp a ident eargs) = let x = ident2String ident in
                     -- handle_error :: Show a => ErrorType a -> ERSIO (Val a) a
                     (msg, val) -> case msg of
                         "RETURN" -> if not (compTypeWithVal type_ val)
-                            then throwError $ string2error $ show (getAFromVal val) ++ ": type error: expected " ++ show type_
+                            then
+                                throwError $ string2error $ show (getAFromVal val) ++ ": type error: expected "
+                                ++ show type_ ++ ", but got " ++ showValsType val
                             else return (changeAVal a val)
                         "BREAK" -> throwError $ string2error $ show (getAFromVal val) ++ ": break coutside of loop"
                         "CONTINUE" -> throwError $ string2error $ show (getAFromVal val) ++ ": continue outside of loop"
@@ -239,15 +333,10 @@ transExpr (EApp a ident eargs) = let x = ident2String ident in
 transExpr (EString a string) = do
     return (Str a string)
 
--- TODO: can we really use mapM here?
--- Because we might want to evaluate exprs iteratively
--- as they might change the store
 transExpr (ETuple a exprs) = liftM (Tuple a) (mapM transExpr exprs)
     -- tup_content <- mapM transExpr exprs
     -- return (Tuple tup_content)
 
--- TODO: make sure this works
--- TODO: what's the type of this? !!!!!!!!!! IMPORTANT !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
 transExpr (EArray a) = do
     return (EmptyArray a)
 
@@ -286,7 +375,9 @@ transExpr (ERel a expr1 relop expr2) = do
         (Boolean _ b1, Boolean _ b2) -> return $ Boolean a $ transOrdRelOp relop b1 b2
         (Int _ i1, Int _ i2) ->  return $ Boolean a $ transOrdRelOp relop i1 i2
         x -> if isOrdOp relop
-            then throwError $ string2error $ show a ++ ": comparison error - provided types are not in Order"
+            then
+                throwError $ string2error $ show a ++ ": comparison error - provided types "
+                ++ showValsType val1 ++ ", " ++ showValsType val2 ++ " are not in Order"
             else case x of
                 (ArrayInt _ arr1, ArrayInt _ arr2) -> return $ Boolean a $ transEqRelOp relop arr1 arr2  
                 (ArrayBoolean _ arr1, ArrayBoolean _ arr2) -> return $ Boolean a $ transEqRelOp relop arr1 arr2
@@ -298,8 +389,12 @@ transExpr (ERel a expr1 relop expr2) = do
                 (ArrayInt _ arr1, EmptyArray _) -> return $ Boolean a $ transEqRelOp relop arr1 []
                 (ArrayBoolean _ arr1, EmptyArray _) -> return $ Boolean a $ transEqRelOp relop arr1 []
                 (ArrayStr _ arr1, EmptyArray _) -> return $ Boolean a $ transEqRelOp relop arr1 []
-                (Tuple _ t1, Tuple _ t2) -> throwError $ string2error $ show a ++ ": tuples are not comparable" -- TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                _ -> throwError $ string2error $ show a ++ ": comparison error - provided types are not comparable"
+                (Tuple _ t1, Tuple _ t2) -> if k == 1 then f True else if k == 0 then f False else throwError $ string2error $ show a
+                    ++ ": comparison error - provided types " ++ showValsType val1 ++ ", " ++ showValsType val2 ++ " are not comparable" where
+                    k = compValLists t1 t2
+                    f = \b -> return $ Boolean a b
+                _ -> throwError $ string2error $ show a ++ ": comparison error - provided types "
+                    ++ showValsType val1 ++ ", " ++ showValsType val2 ++ " are not comparable"
 
 transExpr (EAnd a expr1 expr2) = do
     val1 <- evalToBool expr1
