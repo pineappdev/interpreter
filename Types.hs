@@ -1,5 +1,6 @@
 module Types where
 import AbsGrammar
+import PureVal
 import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.Reader
@@ -8,195 +9,98 @@ import Data.Maybe(fromJust)
 import Data.List(intersperse)
 import Data.Char(toLower)
 
-type ErrorType a = (String, Val a) -- Error, value to return (if return was called, then that string == "RETURN")
+type ErrorType = String
 
-keywords = ["print", "get", "set"]
+keywords = ["print", "set", "return", "break", "continue", "if", "then", "else", "while", "int", "string", "boolean"]
 
--- TODO: that PlaceHolder is really, really unelegant...
-string2error :: String -> ErrorType a
-string2error msg = (msg, NULL)
+string2error :: String -> ErrorType
+string2error msg = msg
 
 type Loc = Int
-type Env loc_type = Map.Map Ident (Loc, loc_type) -- loc_type stores the location of ident's definition
-type Store loc_type = (Map.Map Loc (Val loc_type), Loc) -- (Map loc -> value, first free loc)
+type Env a = Map.Map Ident (Loc, a) -- a stores the location of ident's definition
+-- (Map loc -> value, first free loc, break/continue/return flag, (value of return, place where return was called))
+-- flag : 0 - nothing, 1 - break, 2 - continue, 3 - return
+type Store a = (Map.Map Loc (Val a), Loc, Int, (PureVal, a))
 
-type ERSIO res_type loc_type = ExceptT (ErrorType loc_type) (ReaderT (Env loc_type) (StateT (Store loc_type) IO)) res_type
+setPureVal :: Loc -> PureVal -> ERSIO () a
+setPureVal loc val = modify (\(store, loc', flag, val') -> (Map.insert loc (PureVal val) store, loc', flag, val'))
 
-data Val a = Int a Integer | Str a String | Boolean a Bool | ArrayInt a [Integer] | ArrayBoolean a [Bool]
-         | ArrayStr a [String] | EmptyArray a | Tuple a [Val a] | Fun (Block a) (Type a) (Env a) [Arg a] | NULL
-
-
-showValsType :: Val a -> String
-showValsType (Int _ _) = "int"
-showValsType (Str _ _) = "string"
-showValsType (Boolean _ _) = "bool"
-showValsType (ArrayInt _ _) = "int []"
-showValsType (ArrayBoolean _ _) = "bool []"
-showValsType (ArrayStr _ _) = "string []"
-showValsType (EmptyArray _) = "[]"
-showValsType (Tuple _ vals) = "Tuple<" ++ concat (intersperse ", " (map showValsType vals)) ++ ">"
-
-val2Bool :: Show a => a -> Val a -> ERSIO Bool a
-val2Bool a val = case val of
-    Boolean _ b -> return b
-    _ -> throwError $ string2error $ show a ++ ": type error, expected bool"
-
-val2Int :: Show a => a -> Val a -> ERSIO Integer a
-val2Int a val = case val of
-    Int _ i -> return i
-    _ -> throwError $ string2error $ show a ++ ": type error, expected int"
-
-val2Str :: Show a => a -> Val a -> ERSIO String a
-val2Str a val = case val of
-    Str _ s -> return s
-    _ -> throwError $ string2error $ show a ++ ": type error, expected string"
-
-compVals:: Val a -> Val a -> Int
-compVals val1 val2 = case (val1, val2) of
-    (Int _ i1, Int _ i2) -> if i1 == i2 then 1 else 0
-    (Str _ str1, Str _ str2) -> if str1 == str2 then 1 else 0
-    (Boolean _ b1, Boolean _ b2) -> if b1 == b2 then 1 else 0
-    (ArrayInt _ a1, ArrayInt _ a2) -> if a1 == a2 then 1 else 0
-    (ArrayBoolean _ a1, ArrayBoolean _ a2) -> if a1 == a2 then 1 else 0
-    (ArrayStr _ a1, ArrayStr _ a2) -> if a1 == a2 then 1 else 0
-    (EmptyArray _, ArrayInt _ a1) -> if a1 == [] then 1 else 0
-    (EmptyArray _, ArrayBoolean _ a1) -> if a1 == [] then 1 else 0
-    (EmptyArray _, ArrayStr _ a1) -> if a1 == [] then 1 else 0
-    (ArrayInt _ a1, EmptyArray _) -> if a1 == [] then 1 else 0
-    (ArrayBoolean _ a1, EmptyArray _) -> if a1 == [] then 1 else 0
-    (ArrayStr _ a1, EmptyArray _) -> if a1 == [] then 1 else 0
-    (Tuple _ x1, Tuple _ x2) -> compValLists x1 x2
-    (_, _) -> -1
-
--- returns -1 if types don't match
--- 1 if tuples have same values
--- 0 otherwise
-compValLists :: [Val a] -> [Val a] -> Int
-compValLists [] [] = 1
-compValLists (val1:vals1) (val2:vals2) = if k == 1 then compValLists vals1 vals2 else k where k = compVals val1 val2
-compValLists _ _ = -1
-
-changeAVal :: a -> Val a -> Val a
-changeAVal a' val = case val of
-    Int a i -> Int a' i
-    Str a str -> Str a' str
-    Boolean a b -> Boolean a' b
-    ArrayInt a arr -> ArrayInt a' arr
-    ArrayBoolean a arr -> ArrayBoolean a' arr
-    ArrayStr a arr -> ArrayStr a' arr
-    EmptyArray a -> EmptyArray a'
-    Tuple a vals -> Tuple a' vals
-
-showsPrecVals :: Int -> [Val a] -> ShowS
-showsPrecVals prec [] = showString ""
-showsPrecVals prec (val:vals) = case vals of
-    [] -> showsPrec prec val
-    other -> showsPrec prec val . showString ", " . showsPrecVals prec other
-
-instance Show (Val a) where
-    showsPrec prec (Int _ i) = showString $ show i
-    showsPrec prec (Str _ string) = if prec >= 200000
-        then showString string
-        else \s -> string ++ s
-    showsPrec prec (Boolean _ b) = showString $ map toLower $ show b
-    showsPrec prec (ArrayInt _ arr) = showString $ show arr
-    showsPrec prec (ArrayBoolean _ arr) = showString $ show arr
-    showsPrec prec (ArrayStr _ arr) = showString $ show arr
-    showsPrec prec (EmptyArray _) = showString $ show ([] :: [Int])
-    showsPrec prec (Tuple _ vals) = showString "(" . showsPrecVals 200000 vals . showString ")"
-
-getLoc :: Show a => a -> Ident -> ERSIO (Loc, a) a
-getLoc a x = do
-    env <- ask
-    case Map.lookup x env of
-        Nothing -> throwError $ string2error  $ show a ++ ": error: " ++ show x ++ " was not defined"
-        Just x -> return x
+setVal :: Loc -> Val a -> ERSIO () a
+setVal loc val = modify (\(store, loc', flag, val') -> (Map.insert loc val store, loc', flag, val'))
 
 getVal :: Loc -> ERSIO (Val a) a
 getVal loc = do
-    (store, loc') <- get
-    return $ fromJust $ Map.lookup loc store
+    (store, loc', flag, val') <- get
+    return $ fromJust $ Map.lookup loc store  
 
+getPureVal :: Loc -> ERSIO PureVal a
+getPureVal loc = do
+    val <- getVal loc
+    return $ toPureVal val
 
-compTypeLists :: [Val a] -> [Val a] -> Bool
-compTypeLists [] [] = True
-compTypeLists (t1:t1s) (t2:t2s) = if compValTypes t1 t2 then compTypeLists t1s t2s else False
-compTypeLists _ _ = False
+type ERSIO res_type a = ExceptT ErrorType (ReaderT (Env a) (StateT (Store a) IO)) res_type
 
-compValTypes :: Val a -> Val a -> Bool
-compValTypes t1 t2 =
-    case (t1, t2) of
-        (Int _ _, Int _ _) -> True
-        (Str _ _, Str _ _) -> True
-        (Boolean _ _, Boolean _ _) -> True
-        (ArrayInt _ _, ArrayInt _ _) -> True
-        (ArrayBoolean _ _, ArrayBoolean _ _) -> True
-        (ArrayStr _ _, ArrayStr _ _) -> True
-        (EmptyArray _, ArrayInt _ _) -> True
-        (EmptyArray _, ArrayBoolean _ _) -> True
-        (EmptyArray _, ArrayStr _ _) -> True
-        (ArrayInt _ _, EmptyArray _) -> True
-        (ArrayBoolean _ _, EmptyArray _) -> True
-        (ArrayStr _ _, EmptyArray _) -> True
-        (Tuple _ x1, Tuple _ x2) -> compTypeLists x1 x2
-        (_, _) -> False 
+data Val a = PureVal PureVal | Fun (Block a) (Type a) (Env a) [Arg a]
+    deriving(Eq)
 
-compTypesWithVals :: [Type a] -> [Val a] -> Bool
-compTypesWithVals [] [] = True
-compTypesWithVals (type_:types) (val:vals) = if compTypeWithVal type_ val then compTypesWithVals types vals else False
-compTypesWithVals _ _ = False
+isPureVal :: Val a -> Bool
+isPureVal (PureVal pv) = True
+isPureVal _ = False 
 
-compTypeWithVal :: Type a -> Val a -> Bool
-compTypeWithVal type_ val = case (type_, val) of 
-    (BaseT _ (IntT _), Int _ _) -> True
-    (BaseT _ (BooleanT _), Boolean _ _) -> True
-    (BaseT _ (StrT _), Str _ _) -> True
-    (ArrayT _ (IntT _), ArrayInt _ _) -> True
-    (ArrayT _ (BooleanT _), ArrayBoolean _ _) -> True
-    (ArrayT _ (StrT _), ArrayStr _ _) -> True
-    (ArrayT _ (IntT _), EmptyArray _) -> True
-    (ArrayT _ (BooleanT _), EmptyArray _) -> True
-    (ArrayT _ (StrT _), EmptyArray _) -> True
-    (TupleT _ types, Tuple _ vals) -> compTypesWithVals types vals
-    _ -> False
+toPureVal :: Val a -> PureVal
+toPureVal (PureVal pv) = pv
+
+instance Show (Val a) where
+    show = show . toPureVal
+
+showValsType :: Val a -> String
+showValsType = showPureValsType . toPureVal
+
+val2Bool :: Show a => a -> Val a -> ERSIO Bool a
+val2Bool place val = case val of
+    PureVal (Boolean b) -> return b
+    _ -> throwError $ string2error $ show place ++ ": type error, expected bool, but got " ++ showValsType val
+
+val2Int :: Show a => a -> Val a -> ERSIO Integer a
+val2Int place val = case val of
+    PureVal (Int i) -> return i
+    _ -> throwError $ string2error $ show place ++ ": type error, expected int, but got " ++ showValsType val
+
+val2Str :: Show a => a -> Val a -> ERSIO String a
+val2Str place val = case val of
+    PureVal (Str s) -> return s
+    _ -> throwError $ string2error $ show place ++ ": type error, expected string, but got " ++ showValsType val
+
+-- given a place and an ident, computes loc of this ident
+-- or throws an error "undefined..." at given place
+getLoc :: Show a => Ident -> ERSIO Loc a
+getLoc x = do
+    env <- ask
+    return $ fst $ fromJust $ Map.lookup x env
 
 -- allocates a new loc with input value and returns this new loc
 alloc :: Val a -> ERSIO Loc a
 alloc val = do
     loc <- getNewLoc
-    modify (\(store, _) -> (Map.insert loc val store, loc + 1))
+    modify (\(store, loc, flag, val') -> (Map.insert loc val store, loc + 1, flag, val'))
     return loc
+
+allocPure :: PureVal -> ERSIO Loc a
+allocPure = alloc . PureVal
 
 getNewLoc :: ERSIO Loc a
 getNewLoc = do
-    (store, loc) <- get
+    (_, loc, _, _) <- get
     return loc
 
-getAFromType :: Type a -> a
-getAFromType type_ = case type_ of
+getPlaceFromType :: Type a -> a
+getPlaceFromType type_ = case type_ of
     BaseT a _ -> a
     ArrayT a _ -> a
     TupleT a _ -> a
 
-getAFromVal :: Val a -> a
-getAFromVal val = case val of
-    Int a _ -> a
-    Str a _ -> a
-    Boolean a _ -> a
-    ArrayInt a _ -> a
-    ArrayBoolean a _ -> a
-    ArrayStr a _ -> a
-    EmptyArray a -> a
-    Tuple a _ -> a
-
-getAFromMulOp :: MulOp a -> a
-getAFromMulOp mulop = case mulop of
+getPlaceFromMulOp :: MulOp a -> a
+getPlaceFromMulOp mulop = case mulop of
     Times a -> a
     Div a -> a
     Mod a -> a
-
--- getAt :: Val a -> Int -> Val a
--- getAt (Tuple t) pos = t !! pos
-
-ident2String :: Ident -> String
-ident2String (Ident str) = str
