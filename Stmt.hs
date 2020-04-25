@@ -16,6 +16,45 @@ assign (x, val) = do
     val_x <- getPureVal loc_x
     setPureVal loc_x val
 
+evalFinal :: Show a => Final a -> ERSIO (Ident, [(Integer, a)]) a
+evalFinal final = case final of
+    Final1 a ident -> return (ident, [])
+    Final2 a f expr -> do
+        idx <- evalToInt expr
+        (ident, idxs) <- evalFinal f
+        return (ident, idxs ++ [(idx, getAFromExpr expr)])
+
+
+checkRange :: Show a => Foldable t => a -> Integer -> t b -> ERSIO () a
+checkRange a idx arr = if idx >= toInteger (length arr)
+    then throwError $ string2error $ show a ++ ": index out of range: " ++ show idx
+    else if idx < 0
+        then throwError $ string2error $ show a ++ ": negative index: " ++ show idx
+        else return ()
+
+insertAt :: Show a => PureVal -> PureVal -> [(Integer, a)] -> ERSIO PureVal a
+insertAt to_insert original ([]) = return to_insert
+insertAt to_insert (Array vals) ((idx, a):idxs) = do
+    checkRange a idx vals
+    case splitAt (fromInteger idx) vals of
+        (left, right) -> case splitAt 1 right of
+            (to_modify:[], right') -> do
+                modified <- insertAt to_insert to_modify idxs
+                return $ Array $ left ++ (modified:right')
+
+assignAt :: Show a => Ident -> PureVal -> [(Integer, a)] -> ERSIO () a
+assignAt x val [] = assign (x, val)
+assignAt x val idxs = do
+    loc_x <- getLoc x
+    val_x <- getPureVal loc_x
+    new_val_x <- insertAt val val_x idxs
+    setPureVal loc_x new_val_x
+
+assignFinal :: Show a => Final a -> PureVal -> ERSIO () a
+assignFinal final val = do
+    (x, idxs) <- evalFinal final
+    assignAt x val idxs
+
 unpackVal :: Show a => PureVal -> ItemQ a -> ERSIO () a
 unpackVal val itemq = case itemq of
     ItemQTuple a itemqs -> do
@@ -23,8 +62,7 @@ unpackVal val itemq = case itemq of
             Tuple tvals -> do
                 mapM (\(val, itemq) -> unpackVal val itemq) (zip tvals itemqs)
                 return ()
-    ItemQIdent a ident -> do
-        assign (ident, val)
+    ItemQFinal a final -> assignFinal final val
         
 
 transStmt :: Show a => Stmt a -> ERSIO () a
@@ -41,34 +79,14 @@ transStmt (Ret a expr) = do
 
 transStmt (Empty a) = do return ()
 
-transStmt (Ass a ident expr) = do
+transStmt (Ass a final expr) = do
     val <- transExpr expr
-    assign (ident, val)
+    assignFinal final val
+    
     
 transStmt (Unpack a itemq expr) = do
     val <- transExpr expr
     unpackVal val itemq
-
-
--- x[expr1] = expr2
--- transStmt (ArrayAss a x expr1 expr2) = do
---     idx <- evalToInt expr2
---     to_set <- transExpr expr2
---     if idx < 0
---         then throwError $ string2error $ show a ++ ": index cannot be negative"
---         else do
---             loc <- getLoc x
---             val <- getPureVal loc
---             case val of
---                 Array ptype pvals -> do
---                     checkRange a (fromInteger idx) pvals
---                     if not (compPureValsTypes to_set (pvals !! fromInteger(idx))) then
---                         throwError $ string2error $ show a ++ ": type error: expected " ++ show ptype
---                             ++ ", but got" ++ showPureValsType to_set
---                     else
---                         setPureVal loc (Array ptype (insertToArr (fromInteger idx) to_set pvals))
---                 Tuple _ -> throwError $ string2error $ show a ++ ": you can't change content of a tuple :P"
---                 _ -> throwError $ string2error $ show a ++ ": only array/tuple indexing is supported, got " ++ showPureValsType val
 
 transStmt (Cond _ expr stmt) = do
     b <- evalToBool expr
@@ -238,13 +256,6 @@ printArgs a (earg:eargs) = do
     let str = if not (null eargs) then show val ++ " " else show val ++ "\n" 
     liftIO (putStr str) >> printArgs a eargs
 
-checkRange :: Show a => Foldable t => a -> Integer -> t b -> ERSIO () a
-checkRange a idx arr = if idx >= toInteger (length arr)
-    then throwError $ string2error $ show a ++ ": index out of range: " ++ show idx
-    else if idx < 0
-        then throwError $ string2error $ show a ++ ": negative index: " ++ show idx
-        else return ()
-
 eargToValue :: Show a => EArg a -> ERSIO PureVal a
 eargToValue earg = case earg of
     EArgE _ expr -> transExpr expr
@@ -258,52 +269,12 @@ insertToArr idx val vals = case splitAt idx vals of
         right' = case splitAt 1 right of
             (l, r) -> r
 
--- transSet :: Show a => a -> [EArg a] -> ERSIO (Val a) a
--- --          array index value
--- transSet a (earg1:earg2:earg3:[]) = do
---     let a3 = getAFromEArg earg3
---     let a2 = getAFromEArg earg2
---     idx <- computeIndex earg2
---     to_set <- eargToValue earg3
---     case earg1 of
---         EArgE a' expr -> throwError $ string2error $ show a' ++ ": first argument of set must be passed by name"
---         EArgName b x -> do
---             (loc, _) <- getLoc x
---             val <- getVal loc
---             case val of
---                 Tuple z vals -> do
---                     checkRange a2 idx vals
---                     let val_cur = (vals !! fromInteger(idx))
---                     if not (compValTypes to_set val_cur) then
---                         throwError $ string2error $ show a3 ++ ": type error: expected " ++ showValsType val_cur ++ ", but got " ++ showValsType to_set
---                         else insertVal loc (Tuple z (insertToArr (fromInteger idx) to_set vals))
---                 ArrayInt z arr -> do
---                     checkRange a2 idx arr
---                     i <- val2Int a3 to_set
---                     insertVal loc (ArrayInt z (insertToArr (fromInteger idx) i arr))
---                 ArrayBoolean z arr -> do
---                     checkRange a2 idx arr
---                     b <- val2Bool a3 to_set
---                     insertVal loc (ArrayBoolean z (insertToArr (fromInteger idx) b arr))
---                 ArrayStr z arr -> do
---                     checkRange a2 idx arr
---                     s <- val2Str a3 to_set
---                     insertVal loc (ArrayStr z (insertToArr (fromInteger idx) s arr))
---                 EmptyArray _ -> throwError $ string2error $ show a2 ++ ": array index out of range"
---                 _ -> throwError $ string2error $ show a2 ++ ": set only accepts tuples or arrays, got " ++ showValsType val
---     return $ Int a 0
-
--- transSet a _ = throwError $ string2error $ show a ++ ": set function accepts 3 args: array/tuple, index (int), and a new value"
-
 transExpr :: Show a => Expr a -> ERSIO PureVal a
 
 transExpr (EGet a expr1 expr2) = do
     idx <- evalToInt expr2
     val1 <- transExpr expr1
     let pvals = case val1 of Array pvals -> pvals
-        -- Tuple pvals -> return pvals
-        -- _ -> throwError $ string2error $ show (getAFromExpr expr1)
-            -- ++ ": error: indexing works only with tuples and arrays"
     checkRange a idx pvals
     return $ pvals !! (fromInteger idx)
 
@@ -340,12 +311,6 @@ transExpr (EApp a ident eargs) = let x = ident2String ident in
 transExpr (EString a string) = return (Str string)
 
 transExpr (ETuple a expr exprs) = liftM Tuple (mapM transExpr (expr:exprs))
-    -- tup_content <- mapM transExpr exprs
-    -- return (Tuple tup_content)
-
-
-
-            
 
 transExpr (Neg a expr) = do
     x <- evalToInt expr

@@ -14,11 +14,6 @@ hasDuplicates list = length list /= length set
 
 keyfuns = ["print"]
 
--- data PureType = TInt | TStr | TBoolean | TArray PureType | TTuple [PureType] | TEmptyArray
-
---                      def           arg
--- type FunType a = PureType a [(PureType, a)]
-
 data FunType a = Fun PureType a [(PureType, a)]
 
 data Typee a = PureType a PureType | FunType (FunType a)
@@ -155,6 +150,29 @@ typeCheckEArg earg = case earg of
         (ptype, _) <- getPureType a name
         return ptype
 
+
+getAFromFinal :: Final a -> a
+getAFromFinal f = case f of
+    Final1 a _ -> a
+    Final2 a _ _ -> a
+
+-- data Final a = Final1 a Ident | Final2 a (Final a) (Expr a)
+-- evaluates Final to PureType
+-- e.g. evalFinal (x {2} {3} {4}) -> type of x[2][3][4] (or error)
+evalFinal :: Show a => Final a -> ER PureType a
+evalFinal f = case f of
+    Final1 a x -> do
+        (ptype, _) <- getPureType a x
+        return ptype
+    Final2 a f expr -> do
+        ptype <- evalFinal f
+        typeCheckTo TInt expr
+        case ptype of
+            TArray ptype -> return ptype
+            other -> throwError $ string2error $ show (getAFromFinal f) ++ ": " ++ show other
+                ++ " is not an array, cannot be indexed\n"
+                ++ "\tdid you overuse nested array indexing? (e.g. int [] x = [0]; x{0}{1}{2}{3}{4} = 3;"
+
 typeCheckExpr :: Show a => Expr a -> ER PureType a
 
 typeCheckExpr (EGet a expr1 expr2) = do
@@ -266,18 +284,19 @@ isOrdOp x = case x of
 
 
 
-
-
-
 typeCheckItemQ :: Show a => ItemQ a -> ER PureType a
-typeCheckItemQ (ItemQIdent a x) = do
-    (ptype, _) <- getPureType a x
-    return ptype
-
+typeCheckItemQ (ItemQFinal a final) = evalFinal final
 typeCheckItemQ (ItemQTuple _ itemqs) = liftM TTuple (mapM typeCheckItemQ itemqs)
 
 -- flag - if stmt will return under any circumstances
 typeCheckStmt :: Show a => Stmt a -> ER Bool a
+
+typeCheckStmt (Ass a final expr) = do
+    type_expr <- typeCheckExpr expr
+    type_left <- evalFinal final
+    if type_left /= type_expr
+        then throwError $ string2error $ show (getAFromExpr expr) ++ ": type error: expected " ++ show type_left ++ ", but got " ++ show type_expr
+        else return False
 
 typeCheckStmt (Break a) = do
     in_loop <- whetherInLoop
@@ -301,13 +320,6 @@ typeCheckStmt (Ret a expr) = do
             return True
 
 typeCheckStmt (Empty a) = return False
-
-typeCheckStmt (Ass a x expr) = do
-    type_expr <- typeCheckExpr expr
-    (ptype, a') <- getPureType a x
-    if ptype /= type_expr
-        then throwError $ string2error $ show a ++ ": type error: expected " ++ show ptype ++ ", but got " ++ show ptype
-        else return False
 
 -- data ItemQ a = ItemQIdent a Ident | ItemQTuple a [ItemQ a]
 

@@ -39,7 +39,7 @@ data Stmt a
     | Continue a
     | Decl a (Type a) [Item a]
     | Unpack a (ItemQ a) (Expr a)
-    | Ass a Ident (Expr a)
+    | Ass a (Final a) (Expr a)
     | FunDef a (TopDef a)
     | Ret a (Expr a)
     | Cond a (Expr a) (Stmt a)
@@ -56,7 +56,7 @@ instance Functor Stmt where
         Continue a -> Continue (f a)
         Decl a type_ items -> Decl (f a) (fmap f type_) (map (fmap f) items)
         Unpack a itemq expr -> Unpack (f a) (fmap f itemq) (fmap f expr)
-        Ass a ident expr -> Ass (f a) ident (fmap f expr)
+        Ass a final expr -> Ass (f a) (fmap f final) (fmap f expr)
         FunDef a topdef -> FunDef (f a) (fmap f topdef)
         Ret a expr -> Ret (f a) (fmap f expr)
         Cond a expr stmt -> Cond (f a) (fmap f expr) (fmap f stmt)
@@ -69,12 +69,19 @@ data Item a = Init a Ident (Expr a)
 instance Functor Item where
     fmap f x = case x of
         Init a ident expr -> Init (f a) ident (fmap f expr)
-data ItemQ a = ItemQIdent a Ident | ItemQTuple a [ItemQ a]
+data Final a = Final1 a Ident | Final2 a (Final a) (Expr a)
+  deriving (Eq, Ord, Show, Read)
+
+instance Functor Final where
+    fmap f x = case x of
+        Final1 a ident -> Final1 (f a) ident
+        Final2 a final expr -> Final2 (f a) (fmap f final) (fmap f expr)
+data ItemQ a = ItemQFinal a (Final a) | ItemQTuple a [ItemQ a]
   deriving (Eq, Ord, Show, Read)
 
 instance Functor ItemQ where
     fmap f x = case x of
-        ItemQIdent a ident -> ItemQIdent (f a) ident
+        ItemQFinal a final -> ItemQFinal (f a) (fmap f final)
         ItemQTuple a itemqs -> ItemQTuple (f a) (map (fmap f) itemqs)
 data BaseType a = IntT a | StrT a | BooleanT a
   deriving (Eq, Ord, Show, Read)
