@@ -1,0 +1,4 @@
+int f () {
+	return 0;
+}
+// type checker will throw an error, because main is undefined
