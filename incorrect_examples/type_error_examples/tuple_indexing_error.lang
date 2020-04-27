@@ -1,0 +1,15 @@
+int main () {
+    # Tuple<int> x = ((2)); wouldn't also work
+    # because the compiler would never know if the parentheses are for tuple, or for an expression (of value 2)
+    # so, just as in Python, you have to add "," after singleton-tuple element
+    Tuple<int> x = ((2,));
+    Tuple<int, bool> t = ((1, false));
+    
+    # tuple indexing basically stands against static type checking;
+    # to evaluate type of t[idx], we'd have to compute idx,
+    # and that's not always possible (in finite time, unless we use constexprs like in C++)
+    # but I didn't introduce constexprs, so you should see an error :) 
+    return t[0];
+
+    return 0;
+}

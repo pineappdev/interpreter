@@ -1,4 +1,4 @@
-module Types where
+module Env where
 import AbsGrammar
 import PureVal
 import Control.Monad.Except
@@ -10,8 +10,6 @@ import Data.List(intersperse)
 import Data.Char(toLower)
 
 type ErrorType = String
-
-keywords = ["print", "set", "return", "break", "continue", "if", "then", "else", "while", "int", "string", "boolean"]
 
 string2error :: String -> ErrorType
 string2error msg = msg
@@ -56,23 +54,7 @@ instance Show (Val a) where
 showValsType :: Val a -> String
 showValsType = showPureValsType . toPureVal
 
-val2Bool :: Show a => a -> Val a -> ERSIO Bool a
-val2Bool place val = case val of
-    PureVal (Boolean b) -> return b
-    _ -> throwError $ string2error $ show place ++ ": type error, expected bool, but got " ++ showValsType val
-
-val2Int :: Show a => a -> Val a -> ERSIO Integer a
-val2Int place val = case val of
-    PureVal (Int i) -> return i
-    _ -> throwError $ string2error $ show place ++ ": type error, expected int, but got " ++ showValsType val
-
-val2Str :: Show a => a -> Val a -> ERSIO String a
-val2Str place val = case val of
-    PureVal (Str s) -> return s
-    _ -> throwError $ string2error $ show place ++ ": type error, expected string, but got " ++ showValsType val
-
 -- given a place and an ident, computes loc of this ident
--- or throws an error "undefined..." at given place
 getLoc :: Show a => Ident -> ERSIO Loc a
 getLoc x = do
     env <- ask
@@ -92,15 +74,3 @@ getNewLoc :: ERSIO Loc a
 getNewLoc = do
     (_, loc, _, _) <- get
     return loc
-
-getPlaceFromType :: Type a -> a
-getPlaceFromType type_ = case type_ of
-    BaseT a _ -> a
-    ArrayT a _ -> a
-    TupleT a _ -> a
-
-getPlaceFromMulOp :: MulOp a -> a
-getPlaceFromMulOp mulop = case mulop of
-    Times a -> a
-    Div a -> a
-    Mod a -> a

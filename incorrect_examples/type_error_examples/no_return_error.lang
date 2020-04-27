@@ -1,0 +1,18 @@
+/* As type-checker works statically, it doesn't evaluate any actual values, so if it
+   encounters an if branch not ending with return, the whole if statement doesn't yield return,
+   and so in this particular case we'll get an error, because main function could possibly not end
+   with return
+*/
+
+int main () {
+    if(true) {
+        return 0;
+    }
+
+    if(false) {
+        0;
+    }
+    else {
+        return 1;
+    }
+}

@@ -1,8 +1,8 @@
-module Stmt where
+module Interp where
 
 import AbsGrammar
 import PureVal
-import Types
+import Env
 
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -151,19 +151,11 @@ transTopDef (FnDef a type_ ident args block) = do
 
 -- reserve loc for func and change the env, but don't define function (in store loc for that func points to nothing)
 registerFun :: Show a => TopDef a -> ERSIO (Env a) a
-registerFun (FnDef a type_ f args block) = let x = ident2String f in
-    if elem x keywords
-    then do
-        throwError $ string2error $ show a ++ ": illegal function definition: " ++ show f ++ " is a restricted keyword"
-    else do
-        env <- ask
-    -- TODO: name overriding, but not in scope of the same block... TODO
-    -- case Map.lookup f env of
-        -- Just _ -> throwError $ string2error $ "Function " ++ show f ++ " is already defined"
-        -- Nothing -> do
-        loc <- getNewLoc
-        modify (\(store, loc', x, y) -> (store, loc' + 1, x, y))
-        return $ Map.insert f (loc, a) env
+registerFun (FnDef a type_ f args block) = do
+    env <- ask
+    loc <- getNewLoc
+    modify (\(store, loc', x, y) -> (store, loc' + 1, x, y))
+    return $ Map.insert f (loc, a) env
 
 transDecl :: Show a => Stmt a -> ERSIO (Env a) a
 transDecl (Decl a type_ []) = do ask
@@ -174,31 +166,8 @@ transDecl (Decl a type_ ((Init a' x expr):items)) = do
 
 
 
-------------------------------------------------- EXPRS -------------------------------------------------------------------------
+------------------------------------------------- Exprs -------------------------------------------------------------------
 -- TODO: separate this as a distinct module
--- TODO: showType val function??
-
-getAFromExpr :: Show a => Expr a -> a
-getAFromExpr expr = case expr of
-    EVar a _ -> a
-    ELitInt a _ -> a
-    ELitTrue a -> a
-    ELitFalse a -> a
-    EApp a _ _ -> a
-    EString a _ -> a
-    ETuple a _ _ -> a
-    EArray a _ -> a
-    Neg a _ -> a
-    Not a _ -> a
-    EMul a _ _ _ -> a
-    EAdd a _ _ _ -> a
-    ERel a _ _ _ -> a
-    EAnd a _ _ -> a
-    EOr a _ _ -> a
-
-getAFromEArg :: Show a => EArg a -> a
-getAFromEArg (EArgE a _) = a
-getAFromEArg (EArgName a _) = a
 
 evalToInt :: Show a => Expr a -> ERSIO Integer a
 evalToInt expr = do
@@ -227,41 +196,27 @@ resolveArgs a (earg:eargs) (arg:args) =
             val <- getPureVal loc
             local (\env -> Map.insert x (loc, aa) env) (resolveArgs a eargs args)
 
--- TODO: check this, static typing should take care...
-resolveArgs _ eargs [] = case head eargs of
-    earg -> throwError $ string2error $ show (getAFromEArg earg) ++ ": too many arguments in function call"
-
-resolveArgs a [] args = throwError $ string2error $ show a ++ ": not enough arguments provided"
-
--- TODO: provide place...
 execFun :: Show a => Type a -> Ident -> Env a -> Stmt a -> ERSIO PureVal a
 execFun type_ fun env stmt = do
     local (\env' -> env) (transStmt stmt)
     (store, loc, flag, (pval, a)) <- get
     case flag of
-        -- static typing should take care of this...
-        -- 0 -> throwError $ string2error $ "No return in function " ++ show fun
-        -- 1 -> throwError $ string2error $ "Break outside of while"
-        -- 2 -> throwError $ string2error $ "Continue outside of while"
         3 -> put (store, loc, 0, (pval, a)) >> return pval
-            -- else throwError $ string2error $ show a ++ ": expected " ++ show type_ ++ " as declared at " ++ show (getPlaceFromType type_) ++ ", but got " ++ showPureValsType pval
 
 -- a is the place where the function was called
 printArgs :: Show a => a -> [EArg a] -> ERSIO (PureVal) a
 printArgs a [] = return (Int 0)
 printArgs a (earg:eargs) = do
     val <- case earg of
-        EArgE a expr -> transExpr expr
-        EArgName a x -> throwError $ string2error $ show a ++ ": print only accepts passing by value" -- TODO: check this during static typing
+        EArgE _ expr -> transExpr expr
+        EArgName _ x -> getLoc x >>= getPureVal
     let str = if not (null eargs) then show val ++ " " else show val ++ "\n" 
     liftIO (putStr str) >> printArgs a eargs
 
 eargToValue :: Show a => EArg a -> ERSIO PureVal a
 eargToValue earg = case earg of
     EArgE _ expr -> transExpr expr
-    EArgName b x -> do
-        loc <- getLoc x
-        getPureVal loc
+    EArgName _ x -> getLoc x >>= getPureVal
 
 insertToArr :: Int -> a -> [a] -> [a]
 insertToArr idx val vals = case splitAt idx vals of
@@ -283,7 +238,6 @@ transExpr (EArray a exprs) = liftM Array (mapM transExpr exprs)
 transExpr (EVar a x) = do
     loc <- getLoc x
     val <- getVal loc
-    -- if not (isPureVal val) then throwError $ string2error $ show a ++ ": " ++ show x ++ " is a function"
     return $ toPureVal val
 
 transExpr (ELitInt a i) = do return (Int i)
@@ -293,11 +247,10 @@ transExpr (ELitTrue a) = do return (Boolean True)
 transExpr (ELitFalse a) = do return (Boolean False)
 
 transExpr (EApp a ident eargs) = let x = ident2String ident in
-    if elem x keywords
+    if elem x keyfuns
     then do
         case x of
             "print" -> printArgs a eargs
-            -- "set" -> transSet a eargs
     else do
         loc <- getLoc ident
         (store, loc', _, _) <- get
@@ -367,7 +320,6 @@ transProgram program = do
         Left error -> putStrLn error
         Right () -> return ()
 
--- TODO: move checking main type to static type checking phase
 transProgram_ :: Show a => Program a -> ERSIO () a
 transProgram_ (Program a topdefs) = do
     env <- registerFuns topdefs
@@ -376,10 +328,8 @@ transProgram_ (Program a topdefs) = do
     case val of
         Int i -> do
             liftIO $ putStrLn $ "Main returned " ++ show i
-        _ -> throwError $ string2error $ show a ++ ": main return value should be int"
 
 
--- TODO: wrap it in foldM maybe?
 -- adds function names to the env (reserving locations), but doesn't change the store
 registerFuns :: Show a => [TopDef a] -> ERSIO (Env a) a
 registerFuns [] = ask

@@ -1,0 +1,7 @@
+int main () {
+    bool[][][] arr = [ ];
+    # arr{2}{0}{3}'s type is a bool, so it cannot be indexed...
+    arr{2}{0}{3}{4} = false;
+
+    return 0;
+}

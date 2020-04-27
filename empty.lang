@@ -1,4 +1,0 @@
-int main () {
-    // Tuple<int, Tuple<string>> x = {1, {"string"}};
-    return 0;
-}

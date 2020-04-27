@@ -1,112 +1,101 @@
 module TypeCheck where
-import PureVal
+import PureType
 import AbsGrammar
 import qualified Data.Map as Map
 import Control.Monad.Reader
 import Control.Monad.Except
-import Control.Monad.State
 import qualified Data.Set as Set -- From the 'containers' library
-
-hasDuplicates :: (Ord a) => [a] -> Bool
-hasDuplicates list = length list /= length set
-    where set = Set.fromList list
-
-
-keyfuns = ["print"]
 
 data FunType a = Fun PureType a [(PureType, a)]
 
 data Typee a = PureType a PureType | FunType (FunType a)
 
-type TEnv a = Map.Map Ident (Typee a)
+getAFromTypee :: Typee a -> a
+getAFromTypee (PureType a _) = a
+getAFromTypee (FunType (Fun _ a _)) = a
+
+type2Typee :: Type a -> Typee a
+type2Typee type_ = PureType (getPlaceFromType type_) (type2PureType type_)
+
+-- map ident -> type, depth of definition
+type TEnv a = Map.Map Ident (Typee a, Int)
 
 -- first flag - whether we're in a loop
 -- second flag - return type of the function we are currently in
 -- and the place where it was defined
 type Flags a = (Bool, (PureType, a))
 
-type Env a = (TEnv a, Flags a)
+-- env, flags, current depth
+type Env a = (TEnv a, Flags a, Int)
 
 type ER res_type a = ExceptT ErrorType (Reader (Env a)) res_type
 
+type ErrorType = String
+
+increaseDepth :: Env a -> Env a
+increaseDepth (env, flags, depth) = (env, flags, depth + 1)
+
 insertFunRetTypeToEnv :: PureType -> a -> ER (Env a) a
 insertFunRetTypeToEnv ptype a = do
-    (env, (b, (ptype', a'))) <- ask
-    return (env, (b, (ptype, a)))
+    (env, (b, (ptype', a')), depth) <- ask
+    return (env, (b, (ptype, a)), depth)
+
+-- X is already defined iff it was defined previously on the same depth
+checkIfAlreadyDefined :: Show a => Ident -> a -> ER () a
+checkIfAlreadyDefined x a = do
+    (env, flags, depth) <- ask
+    case Map.lookup x env of
+        Just (type_, depth') -> if depth == depth'
+            then throwError $ string2error $  show a ++ ": " ++ show x
+                ++ " is already defined, previously defined here: " ++ show (getAFromTypee type_)
+            else return ()
+        Nothing -> return ()
 
 insertPureTypeToEnv :: Ident -> a -> PureType -> ER (Env a) a
 insertPureTypeToEnv x a ptype = do
-    (env, flags) <- ask
-    return (Map.insert x (PureType a ptype) env, flags)
+    (env, flags, depth) <- ask
+    return (Map.insert x (PureType a ptype, depth) env, flags, depth)
 
 insertFunTypeToEnv :: Ident -> FunType a -> ER (Env a) a
 insertFunTypeToEnv x ftype = do
-    (env, flags) <- ask
-    return (Map.insert x (FunType ftype) env, flags)
+    (env, flags, depth) <- ask
+    return (Map.insert x (FunType ftype, depth) env, flags, depth)
 
--- type ERS res_type a = ExceptT ErrorType (ReaderT (Env a) (State (Bool))) res_type
-
--- TODO: shouldn't we store flags in State?
 loopFlag :: ER (Env a) a
 loopFlag = do
-    (tenv, (flag, x)) <- ask
-    return (tenv, (True, x))
+    (tenv, (flag, x), depth) <- ask
+    return (tenv, (True, x), depth)
 
 whetherInLoop :: ER Bool a
 whetherInLoop = do
-    (_, (flag, _)) <- ask
+    (_, (flag, _), _) <- ask
     return flag
 
 getCurFuncType :: ER (PureType, a) a
 getCurFuncType = do
-    (_, (_, x)) <- ask
+    (_, (_, x), _) <- ask
     return x
 
 getPureType :: Show a => a -> Ident -> ER (PureType, a) a
 getPureType a x = do
-    (env, _) <- ask
+    (env, _, _) <- ask
     case Map.lookup x env of
         Nothing -> throwError $ show a ++ ": " ++ show x ++ " is undefined" 
         Just y -> case y of
-            PureType a ptype -> return (ptype, a)
+            (PureType a ptype, _) -> return (ptype, a)
             other -> throwError $ show a ++ ": " ++ show x ++ " is a function"
 
 getFunType :: Show a => a -> Ident -> ER (FunType a) a
 getFunType a x = do
-    (env, _) <- ask
+    (env, _, _) <- ask
     case Map.lookup x env of
         Nothing -> throwError $ show a ++ ": " ++ show x ++ " is undefined"
         Just y -> case y of
-            FunType f -> return f
+            (FunType f, _) -> return f
             other -> throwError $ show a ++ ": " ++ show x ++ " is not a function"
-
-type ErrorType = String
 
 string2error :: String -> ErrorType
 string2error = id
-
-getAFromExpr :: Show a => Expr a -> a
-getAFromExpr expr = case expr of
-    EVar a _ -> a
-    ELitInt a _ -> a
-    ELitTrue a -> a
-    ELitFalse a -> a
-    EApp a _ _ -> a
-    EString a _ -> a
-    ETuple a _ _ -> a
-    EArray a _ -> a
-    Neg a _ -> a
-    Not a _ -> a
-    EMul a _ _ _ -> a
-    EAdd a _ _ _ -> a
-    ERel a _ _ _ -> a
-    EAnd a _ _ -> a
-    EOr a _ _ -> a
-    EGet a _ _ -> a
-
-getAFromEArg :: Show a => EArg a -> a
-getAFromEArg (EArgE a _) = a
-getAFromEArg (EArgName a _) = a
 
 typeCheckTo :: Show a => PureType -> Expr a -> ER PureType a
 typeCheckTo ptype expr = do
@@ -149,12 +138,6 @@ typeCheckEArg earg = case earg of
     EArgName a name -> do
         (ptype, _) <- getPureType a name
         return ptype
-
-
-getAFromFinal :: Final a -> a
-getAFromFinal f = case f of
-    Final1 a _ -> a
-    Final2 a _ _ -> a
 
 -- data Final a = Final1 a Ident | Final2 a (Final a) (Expr a)
 -- evaluates Final to PureType
@@ -205,22 +188,30 @@ typeCheckExpr (ELitFalse _) = return TBoolean
 
 typeCheckExpr (EApp a ident eargs) = let x = ident2String ident in do
     earg_types_ <- mapM typeCheckEArg eargs
-    -- TODO: check if Haskell laziness doesn't prevent us from checking earg types
+
+    -- TODO: too many / not enough arguments in function call!
+
     let earg_types = zip earg_types_ (map getAFromEArg eargs)
     if elem x keyfuns
         then do
             case x of
-                -- TODO: check types of eargs!!!!
                 "print" -> return TInt
-                -- "set" -> transSet a eargs
         else do
             fun <- getFunType a ident
             case fun of
-                -- (PureType [(PureType, a)], a')
+                -- (PureType a' [(PureType, a)])
                 Fun ret_type a' arg_types -> do
-                    _ <- mapM (\(a, b) -> compare a b) (zip arg_types earg_types)
+                    -- _ <- mapM (\(a, b) -> compare a b) (zip arg_types earg_types)
+                    compareArgs a arg_types earg_types
                     return ret_type
                 where
+                    compareArgs :: Show a => a -> [(PureType, a)] -> [(PureType, a)] -> ER () a
+                    compareArgs a [] [] = return ()
+                    compareArgs a (farg:fargs) (earg:eargs) = do
+                        compare farg earg >> compareArgs a fargs eargs
+                    compareArgs a (_:_) [] = throwError $ string2error $ show a ++ ": not enough arguments proided"
+                    compareArgs _ [] ((_, a'):_) = throwError $ string2error $ show a' ++ ": too many arguments in function call" 
+
                     compare :: Show a => (PureType, a) -> (PureType, a) -> ER () a
                     compare (ptype1, aa) (ptype2, ea) =
                         if ptype1 /= ptype2
@@ -233,7 +224,6 @@ typeCheckExpr (EString a string) = return TStr
 
 typeCheckExpr (ETuple a expr exprs) = liftM TTuple (mapM typeCheckExpr (expr:exprs))
 
--- typeCheckTo :: Show a => PureType -> Expr a -> ER () a
 typeCheckExpr (Neg a expr) = typeCheckTo TInt expr
 
 typeCheckExpr (Not a expr) = typeCheckTo TBoolean expr
@@ -267,28 +257,11 @@ typeCheckExpr (EOr a expr1 expr2) = do
     typeCheckTo TBoolean expr1
     typeCheckTo TBoolean expr2
 
-
-isOrdOp :: RelOp a -> Bool
-isOrdOp x = case x of
-    EQU a -> False
-    NE a -> False
-    _ -> True
-
-
-
-
-
-
-
-
-
-
-
 typeCheckItemQ :: Show a => ItemQ a -> ER PureType a
 typeCheckItemQ (ItemQFinal a final) = evalFinal final
 typeCheckItemQ (ItemQTuple _ itemqs) = liftM TTuple (mapM typeCheckItemQ itemqs)
 
--- flag - if stmt will return under any circumstances
+-- flag - indicating if stmt will return under any circumstances
 typeCheckStmt :: Show a => Stmt a -> ER Bool a
 
 typeCheckStmt (Ass a final expr) = do
@@ -321,8 +294,6 @@ typeCheckStmt (Ret a expr) = do
 
 typeCheckStmt (Empty a) = return False
 
--- data ItemQ a = ItemQIdent a Ident | ItemQTuple a [ItemQ a]
-
 -- TODO: we could show exact location when the error happens...
 typeCheckStmt (Unpack a itemq expr) = do
     type_expr <- typeCheckExpr expr
@@ -336,6 +307,7 @@ typeCheckStmt (Unpack a itemq expr) = do
 typeCheckStmt (Cond _ expr stmt) = do
     typeCheckTo TBoolean expr
     typeCheckStmt stmt
+    return False
 
 typeCheckStmt (CondElse _ expr stmt1 stmt2) = do
     typeCheckTo TBoolean expr
@@ -348,24 +320,26 @@ typeCheckStmt (While _ expr stmt) = do
 
 typeCheckStmt (SExp _ expr) = typeCheckExpr expr >> return False
 
-typeCheckStmt (BStmt a (Block a' [])) = return False
+typeCheckStmt (BStmt a block) = do
+    env_ <- ask
+    let env = increaseDepth env_
+    local (\_ -> env) (typeCheckBlock block)
 
-typeCheckStmt (BStmt a (Block a' (stmt:stmts))) = do
-    case stmt of
-        Decl a'' type_ items -> do
-            env <- typeCheckDecl (Decl a'' type_ items)
-            local (\env' -> env) (typeCheckStmt (BStmt a (Block a' stmts)))
-        FunDef a'' topdef -> do
-            env <- typeCheckTopDef (topdef)
-            local (\env' -> env) (typeCheckStmt (BStmt a (Block a' stmts)))
-        -- TODO: Haskell's laziness can cause him to avoid evaluating stmts entirely, right?
-        -- return 2; "qwe" + 2
-        other -> liftM2 (||) (typeCheckStmt stmt) (typeCheckStmt (BStmt a (Block a' stmts)))
-
+typeCheckBlock :: Show a => Block a -> ER Bool a
+typeCheckBlock (Block a []) = return False
+typeCheckBlock (Block a (stmt:stmts)) = case stmt of
+    Decl a' type_ items -> do
+        env <- typeCheckDecl (Decl a' type_ items)
+        local (\env' -> env) (typeCheckBlock (Block a stmts))
+    FunDef a' topdef -> do
+        env <- typeCheckTopDef (topdef)
+        local (\env' -> env) (typeCheckBlock (Block a stmts))
+    other -> liftM2 (||) (typeCheckStmt other) (typeCheckBlock (Block a stmts))
 
 typeCheckItem :: Show a => PureType -> Item a -> ER (Env a) a
 typeCheckItem ptype (Init a x expr) = do
     typeCheckTo ptype expr
+    checkIfAlreadyDefined x a
     insertPureTypeToEnv x a ptype
 
 typeCheckItems :: Show a => PureType -> [Item a] -> ER (Env a) a
@@ -379,24 +353,10 @@ typeCheckDecl (Decl a'' type_ items) = do
     let ptype = type2PureType type_
     typeCheckItems ptype items
 
-getAFromArg :: Arg a -> a
-getAFromArg (Arg a _ _) = a
-
-arg2Ident :: Arg a -> Ident
-arg2Ident (Arg _ _ x) = x
-
-arg2Type :: Arg a -> Type a
-arg2Type (Arg _ type_ _) = type_
-
-checkForDuplicateIdents :: Show a => a -> [Arg a] -> ER () a
-checkForDuplicateIdents a args = do
-    if hasDuplicates $ map arg2Ident args
-        then throwError $ string2error $ show a ++ ": function arguments must have different names"
-        else return ()
-
 evalArg :: Show a => Arg a -> ER (Env a) a
 evalArg (Arg a type_ x) = do
     let ptype = type2PureType type_
+    checkIfAlreadyDefined x a
     env <- insertPureTypeToEnv x a ptype
     return env
 
@@ -406,18 +366,18 @@ evalArgs (arg:args) = do
     env <- evalArg arg
     local (\env' -> env) (evalArgs args)
 
--- TODO: register all functions before type checking
-typeCheckTopDef :: Show a => TopDef a -> ER (Env a) a
-typeCheckTopDef (FnDef a type_ f args block) = do
+-- that b flag indicates whether we should throwError if function is already defined or not
+typeCheckTopDef_ :: Show a => Bool -> TopDef a -> ER (Env a) a
+typeCheckTopDef_ b (FnDef a type_ f args block) = do
     if elem (ident2String f) keyfuns
         then do
             throwError $ string2error $ show a ++ ": illegal function definition: " ++ show f ++ " is a restricted keyword"
         else do
-            checkForDuplicateIdents a args
             let ptypes = zip (map (type2PureType . arg2Type) args) (map getAFromArg args)
             let fun = Fun (type2PureType type_) a ptypes
+            if b then checkIfAlreadyDefined f a else return ()
             env <- insertFunTypeToEnv f fun
-            env' <- local (\_ -> env) (evalArgs args)
+            env' <- local (\_ -> increaseDepth env) (evalArgs args)
             env_block <- local (\_ -> env') (insertFunRetTypeToEnv (type2PureType type_) a)
             does_ret <- local (\_ -> env_block) (typeCheckStmt (BStmt a block))
             if not does_ret
@@ -427,14 +387,25 @@ typeCheckTopDef (FnDef a type_ f args block) = do
                     return env
 
 
+typeCheckTopDef :: Show a => TopDef a -> ER (Env a) a
+typeCheckTopDef = typeCheckTopDef_ True
+
+typeCheckTopDef_defined :: Show a => TopDef a -> ER () a
+typeCheckTopDef_defined topdef = typeCheckTopDef_ False topdef >> return ()
+
 -- change the env (adding function ident and type to it)
 -- but don't type check the function's body
 registerFun :: Show a => TopDef a -> ER (Env a) a
 registerFun (FnDef a type_ f args block) = let x = ident2String f in do
+    checkIfAlreadyDefined f a
     let ptypes = zip (map (type2PureType . arg2Type) args) (map getAFromArg args)
     let fun = Fun (type2PureType type_) a ptypes
-    env <- insertFunTypeToEnv f fun
-    return env
+    if ident2String f == "main" && type2PureType type_ /= TInt
+        then do
+            throwError $ string2error $ show a ++ ": main function should always return int"
+        else do
+            env <- insertFunTypeToEnv f fun
+            return env
 
 registerFuns :: Show a => [TopDef a] -> ER (Env a) a
 registerFuns [] = ask
@@ -445,16 +416,12 @@ registerFuns (topdef:topdefs) = do
 typeCheckProgram :: Show a => Program a -> ER () a
 typeCheckProgram (Program a topdefs) = do
     env <- registerFuns topdefs
-    local (\_ -> env) (mapM typeCheckTopDef topdefs)
+    local (\_ -> env) (getFunType a (Ident "main") >> mapM typeCheckTopDef_defined topdefs)
     return ()
-
--- transStmt (BStmt a (Block a' stmts)) = do
-    -- liftM (null . (filter id)) (mapM transStmt stmts)
 
 checkType :: Show a => Program a -> IO Bool
 checkType (Program a topdefs) =
-    let outcome = runReader (runExceptT (typeCheckProgram (Program a topdefs))) (Map.empty, (False, (TInt, a))) in
+    let outcome = runReader (runExceptT (typeCheckProgram (Program a topdefs))) (Map.empty, (False, (TInt, a)), 0) in
     case outcome of
         Left error -> putStrLn error >> return False
         Right () -> return True
-

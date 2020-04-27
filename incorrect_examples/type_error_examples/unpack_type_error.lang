@@ -1,0 +1,9 @@
+int main () {
+    Tuple<bool, int> o = ((false, 3));
+    Tuple<bool, Tuple<bool, int>> t = ((false, o));
+    bool b = false, b2 = true;
+    int x = 0;
+    <(b, b2, x)> = t;
+
+	return f();
+}

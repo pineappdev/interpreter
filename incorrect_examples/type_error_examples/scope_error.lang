@@ -1,0 +1,9 @@
+int main () {
+    int x = 0;
+    {
+        bool x = true;
+    }
+    bool x = true; # name overriding works between scopes, not in the same scope
+
+    return 0;
+}

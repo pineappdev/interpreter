@@ -1,0 +1,8 @@
+string f (int x, bool b1, string s) {
+    return "non je ne regrette rien";
+}
+
+int main () {
+    f(3, false, "when the type error occurs", 5);
+    return 3;
+}

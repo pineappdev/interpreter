@@ -1,0 +1,29 @@
+int main () {
+    Tuple <string, Tuple<int>> t = (("I'm a string!", ((2,)) ));
+    t = (("You shall not pass!", ((3,)) ));
+    int [] array = [ ];
+    bool b = false;
+
+    int fun () {
+        int[] array = [ ];
+        bool b = false;
+        int zero(int x, bool y) {
+            return 0;
+        }
+        return (zero(2, false) + 1);
+    }
+
+    string x = "demogorgon";
+    int y = 0;
+
+    {
+        int y = -123;
+        string x = "eleven";
+    }
+
+    <(x, (y))> = t;
+
+    print(t);
+
+    return fun();
+}

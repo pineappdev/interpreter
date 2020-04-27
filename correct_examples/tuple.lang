@@ -1,0 +1,33 @@
+int main () {
+    int f(int x) {
+        x = x + 2;
+        return 0;
+    }
+    
+    Tuple <int, string> tuple_creator(int x, string y) {
+        return ((x, y));
+    }
+
+    Tuple <int, string> y = tuple_creator(3, "voules vouz");
+
+    int x = 1;
+    print("x before pass by value:", x);
+    f(x);
+    print("x after pass by value:", x);
+    f(&x);
+    print("x after pass by name:", x);
+
+    Tuple <int, Tuple<bool, bool, string, Tuple<string>>> t = ((3, ((false, true, "una matina", (("mi son svegliato",)) )) ));
+    int x_ = 0;
+    bool b1 = false, b2 = false;
+    string s1 = "", s2 = "";
+
+    # Tuple unpacking:
+    # left side must be wrapped in '<>' parentheses
+    # and each () on the left is equivalent to a tuple
+    <(x_, (b1, b2, s1, (s2)))> = t;
+
+    print("x_, b1, b2, s1, s2:", x_, ",", b1, ",", b2, ",", s1, ",", s2);
+
+    return f(3);
+}

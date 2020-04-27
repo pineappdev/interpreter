@@ -1,0 +1,11 @@
+string f (int x, string y, Tuple<bool> z) {
+    return "habanera";
+}
+
+
+int main () {
+    bool t = false;
+    f(0, "Yesterday all my troubles seemed so far away.", ((false,)));
+
+    return "...this close to a working program";
+}
