@@ -13,3 +13,6 @@ int main () {
 
     return 0;
 }
+
+// Interpreter will say:
+// (12, 12): tuple indexing is against static typing, please don't do this

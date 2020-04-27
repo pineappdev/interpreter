@@ -7,3 +7,5 @@ int main () {
 
 	return f();
 }
+// Interpreter will say:
+// (6, 5): type error: r-expr is of type Tuple<bool, Tuple<bool, int>>, but unpack template has type: Tuple<bool, bool, int>

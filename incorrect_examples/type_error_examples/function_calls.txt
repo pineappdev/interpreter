@@ -6,3 +6,6 @@ int main () {
     f(3, false, "when the type error occurs", 5);
     return 3;
 }
+
+// Interpreter will say:
+// (6, 47): too many arguments in function call

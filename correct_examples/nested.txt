@@ -23,7 +23,7 @@ int main () {
 
     <(x, (y))> = t;
 
-    print(t);
+    print(x, y); // prints: "You shall not pass!" 3
 
     return fun();
 }

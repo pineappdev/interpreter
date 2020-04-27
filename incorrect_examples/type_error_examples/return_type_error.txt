@@ -9,3 +9,6 @@ int main () {
 
     return "...this close to a working program";
 }
+
+// Interpreter will say:
+// (10, 5): type error: expected int as declared at (6, 1)but got string

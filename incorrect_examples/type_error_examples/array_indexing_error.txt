@@ -5,3 +5,7 @@ int main () {
 
     return 0;
 }
+
+// Interpreter will say:
+// (4, 5): bool is not an array, cannot be indexed
+//         did you overuse nested array indexing? (e.g. int [] x = [0]; x{0}{1}{2}{3}{4} = 3;

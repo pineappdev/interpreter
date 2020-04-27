@@ -16,3 +16,5 @@ int main () {
         return 1;
     }
 }
+// Interpreter will say:
+// (7, 1): no return in function main

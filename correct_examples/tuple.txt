@@ -11,11 +11,11 @@ int main () {
     Tuple <int, string> y = tuple_creator(3, "voules vouz");
 
     int x = 1;
-    print("x before pass by value:", x);
+    print("x before pass by value:", x); // prints "x before pass by value:" 1
     f(x);
-    print("x after pass by value:", x);
+    print("x after pass by value:", x); // prints "x after pass by value:" 1
     f(&x);
-    print("x after pass by name:", x);
+    print("x after pass by name:", x); // "x after pass by name:" 3
 
     Tuple <int, Tuple<bool, bool, string, Tuple<string>>> t = ((3, ((false, true, "una matina", (("mi son svegliato",)) )) ));
     int x_ = 0;
@@ -28,6 +28,7 @@ int main () {
     <(x_, (b1, b2, s1, (s2)))> = t;
 
     print("x_, b1, b2, s1, s2:", x_, ",", b1, ",", b2, ",", s1, ",", s2);
+    // prints "x_, b1, b2, s1, s2:" 3 "," false "," true "," "una matina" "," "mi son svegliato"
 
     return f(3);
 }

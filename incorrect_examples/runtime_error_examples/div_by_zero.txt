@@ -2,3 +2,6 @@ int main () {
     int x = 1 + 2 / 0;
     return 0;
 }
+// Interpreter will say:
+// Type checking finished!
+// (2, 19): division by 0

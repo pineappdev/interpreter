@@ -2,3 +2,6 @@ int main () {
     int [] arr = [1,2,3];
     return arr[4];
 }
+// Interpreter will say:
+// Type checking finished!
+// (3, 12): index out of range: 4

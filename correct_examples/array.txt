@@ -1,20 +1,25 @@
 /* Example illustrates basic usage of nested arrays */
 
 int main () {
-    int [][][] arr = [ [ ], [ ], [ [1,2,3,4,5] ] ];
+    int [][][] arr = [ [], [], [[1,2,3,4,5]] ];
     
     print("Array before the first assignment:", &arr);
+    // prints "Array before the first assignment:" [[], [], [[1, 2, 3, 4, 5]]]
     
-    arr{0} = [ [ ], [ ], [ ] ];
+    arr{0} = [[], [], []];
     print("Array after the first assignment:", &arr);
+    // prints "Array after the first assignment:" [[[], [], []], [], [[1, 2, 3, 4, 5]]]
 
     arr{2}{0}{0} = -123;
     print("Array after the second assignment:", arr);
+    // prints "Array after the second assignment:" [[[], [], []], [], [[-123, 2, 3, 4, 5]]]
 
     Tuple<int> [][] tarr = [ [((1,))], [((2,)), ((3,))] ];
     print("Tuple tarr:", tarr);
+    // prints "Tuple tarr:" [[((1,))], [((2,)), ((3,))]]
 
     print("tarr's second element's second element:", tarr[1][1]);
-
+    // prints "tarr's second element's second element:" ((3,))
+    
     return 0;
 }

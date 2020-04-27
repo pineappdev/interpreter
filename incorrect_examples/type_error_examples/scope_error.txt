@@ -7,3 +7,5 @@ int main () {
 
     return 0;
 }
+// Interpreter will say:
+// (6, 10): x is already defined, previously defined here: (2, 9)
