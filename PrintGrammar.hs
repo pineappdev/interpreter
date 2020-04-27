@@ -144,7 +144,7 @@ instance Print (BaseType a) where
 instance Print (Type a) where
   prt i e = case e of
     BaseT _ basetype -> prPrec i 0 (concatD [prt 0 basetype])
-    ArrayT _ type_ -> prPrec i 0 (concatD [prt 0 type_, doc (showString "[]")])
+    ArrayT _ type_ -> prPrec i 0 (concatD [prt 0 type_, doc (showString "["), doc (showString "]")])
     TupleT _ types -> prPrec i 0 (concatD [doc (showString "Tuple"), doc (showString "<"), prt 0 types, doc (showString ">")])
   prtList _ [x] = (concatD [prt 0 x])
   prtList _ (x:xs) = (concatD [prt 0 x, doc (showString ","), prt 0 xs])

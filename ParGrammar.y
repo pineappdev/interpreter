@@ -34,22 +34,21 @@ import ErrM
   '>=' { PT _ (TS _ 19) }
   'Tuple' { PT _ (TS _ 20) }
   '[' { PT _ (TS _ 21) }
-  '[]' { PT _ (TS _ 22) }
-  ']' { PT _ (TS _ 23) }
-  'bool' { PT _ (TS _ 24) }
-  'break' { PT _ (TS _ 25) }
-  'continue' { PT _ (TS _ 26) }
-  'else' { PT _ (TS _ 27) }
-  'false' { PT _ (TS _ 28) }
-  'if' { PT _ (TS _ 29) }
-  'int' { PT _ (TS _ 30) }
-  'return' { PT _ (TS _ 31) }
-  'string' { PT _ (TS _ 32) }
-  'true' { PT _ (TS _ 33) }
-  'while' { PT _ (TS _ 34) }
-  '{' { PT _ (TS _ 35) }
-  '||' { PT _ (TS _ 36) }
-  '}' { PT _ (TS _ 37) }
+  ']' { PT _ (TS _ 22) }
+  'bool' { PT _ (TS _ 23) }
+  'break' { PT _ (TS _ 24) }
+  'continue' { PT _ (TS _ 25) }
+  'else' { PT _ (TS _ 26) }
+  'false' { PT _ (TS _ 27) }
+  'if' { PT _ (TS _ 28) }
+  'int' { PT _ (TS _ 29) }
+  'return' { PT _ (TS _ 30) }
+  'string' { PT _ (TS _ 31) }
+  'true' { PT _ (TS _ 32) }
+  'while' { PT _ (TS _ 33) }
+  '{' { PT _ (TS _ 34) }
+  '||' { PT _ (TS _ 35) }
+  '}' { PT _ (TS _ 36) }
 
   L_ident {PT _ (TV _)}
   L_integ {PT _ (TI _)}
@@ -248,7 +247,7 @@ Type :: {
 : BaseType {
   (fst $1, AbsGrammar.BaseT (fst $1)(snd $1)) 
 }
-| Type '[]' {
+| Type '[' ']' {
   (fst $1, AbsGrammar.ArrayT (fst $1)(snd $1)) 
 }
 | 'Tuple' '<' ListType '>' {
