@@ -3,13 +3,6 @@ import AbsGrammar
 import Data.List(intersperse)
 import Data.Char(toLower)
 
--- TODO: add NoInit, correct string printing,
--- TODO: separate to more modules
--- alter printing error places
--- remove all unneeded stuff
--- improve style (use liftM and mapM wherever possible, ...)
--- make some usage examples
-
 data PureType = TInt | TStr | TBoolean | TArray PureType | TTuple [PureType] | TEmptyArray
 
 isOrderable :: PureType -> Bool

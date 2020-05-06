@@ -167,7 +167,6 @@ transDecl (Decl a type_ ((Init a' x expr):items)) = do
 
 
 ------------------------------------------------- Exprs -------------------------------------------------------------------
--- TODO: separate this as a distinct module
 
 evalToInt :: Show a => Expr a -> ERSIO Integer a
 evalToInt expr = do

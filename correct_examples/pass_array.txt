@@ -1,0 +1,27 @@
+int main () {
+    int fun(int[][] arr) {
+        arr{0}{1} = 3;
+        return 0;
+    }
+
+    int[][] arr = [[-1,-2,-3]];
+    
+    print(arr);
+    
+    fun(arr);
+    
+    print(arr);
+    
+    fun(&arr);
+    
+    print(arr);
+
+    return 0;
+}
+
+// Expected outcome:
+// Type checking finished!
+// [[-1, -2, -3]]
+// [[-1, -2, -3]]
+// [[-1, 3, -3]]
+// Main returned 0

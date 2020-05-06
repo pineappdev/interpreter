@@ -4,7 +4,6 @@ import AbsGrammar
 import qualified Data.Map as Map
 import Control.Monad.Reader
 import Control.Monad.Except
-import qualified Data.Set as Set -- From the 'containers' library
 
 data FunType a = Fun PureType a [(PureType, a)]
 
@@ -164,6 +163,7 @@ typeCheckExpr (EGet a expr1 expr2) = do
     case type1 of
         TArray ptype -> return ptype
         TTuple _ -> throwError $ string2error $ show (getAFromExpr expr1) ++ ": tuple indexing is against static typing, please don't do this" 
+        TEmptyArray -> throwError $ string2error $ show (getAFromExpr expr1) ++ ": array indexing works only on non empty arrays, got " ++ show type1
         other -> throwError $ string2error $ show (getAFromExpr expr1) ++ ": indexing works only on arrays, got " ++ show type1
 
 typeCheckExpr (EArray a exprs) = do
@@ -189,8 +189,6 @@ typeCheckExpr (ELitFalse _) = return TBoolean
 typeCheckExpr (EApp a ident eargs) = let x = ident2String ident in do
     earg_types_ <- mapM typeCheckEArg eargs
 
-    -- TODO: too many / not enough arguments in function call!
-
     let earg_types = zip earg_types_ (map getAFromEArg eargs)
     if elem x keyfuns
         then do
@@ -199,9 +197,7 @@ typeCheckExpr (EApp a ident eargs) = let x = ident2String ident in do
         else do
             fun <- getFunType a ident
             case fun of
-                -- (PureType a' [(PureType, a)])
                 Fun ret_type a' arg_types -> do
-                    -- _ <- mapM (\(a, b) -> compare a b) (zip arg_types earg_types)
                     compareArgs a arg_types earg_types
                     return ret_type
                 where
@@ -288,13 +284,12 @@ typeCheckStmt (Ret a expr) = do
     (ret_type, fun_place) <- getCurFuncType
     if type_expr /= ret_type
         then throwError $ string2error $ show a ++ ": type error: expected "
-            ++ show ret_type ++ " as declared at " ++ show fun_place ++ "but got " ++ show type_expr
+            ++ show ret_type ++ " as declared at " ++ show fun_place ++ ", but got " ++ show type_expr
         else
             return True
 
 typeCheckStmt (Empty a) = return False
 
--- TODO: we could show exact location when the error happens...
 typeCheckStmt (Unpack a itemq expr) = do
     type_expr <- typeCheckExpr expr
     type_itemqs <- typeCheckItemQ itemq

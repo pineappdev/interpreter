@@ -7,13 +7,6 @@ import Data.Char(toLower)
 data PureVal = Int Integer | Str String | Boolean Bool | Array [PureVal] | Tuple [PureVal]
     deriving(Eq, Ord)
 
-showPureValsType :: PureVal -> String
-showPureValsType (Int _) = "int"
-showPureValsType (Str _) = "string"
-showPureValsType (Boolean _) = "bool"
-showPureValsType (Array vals) = if null vals then "[]" else showPureValsType (head vals) ++ " []"
-showPureValsType (Tuple vals) = "Tuple<" ++ concat (intersperse ", " (map showPureValsType vals)) ++ ">"
-
 showsPrecPureVals :: String -> Int -> [PureVal] -> ShowS
 showsPrecPureVals terminal prec [] = showString ""
 showsPrecPureVals terminal prec (val:vals) = case vals of

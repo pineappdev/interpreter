@@ -51,9 +51,6 @@ toPureVal (PureVal pv) = pv
 instance Show (Val a) where
     show = show . toPureVal
 
-showValsType :: Val a -> String
-showValsType = showPureValsType . toPureVal
-
 -- given a place and an ident, computes loc of this ident
 getLoc :: Show a => Ident -> ERSIO Loc a
 getLoc x = do
